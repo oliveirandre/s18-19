@@ -46,8 +46,8 @@ class Block {
 		for(int i = 0; i < difficulty; i++) {
 			comparison += "0";
 		}		
-		while(this.hash.substring(0, difficulty) != comparison) {
-			this.nonce++;
+		while(!this.hash.substring(0, difficulty).equals(comparison)) {		
+			this.nonce++;			
 			this.hash = this.calculateHash();
 		}
 		System.out.println("Block mined: " + this.hash);
@@ -61,7 +61,7 @@ class Blockchain {
 	
 	public Blockchain() throws NoSuchAlgorithmException {
 		this.chain.add(createGenesis());
-		this.difficulty = 0;
+		this.difficulty = 3;
 	}
 	
 	public Block createGenesis() throws NoSuchAlgorithmException {
@@ -100,19 +100,19 @@ public class AuctionRepository {
 		
 		System.out.println("Genesis Block Hash: \n" + test.getLatestBlock().hash);
 		
-		System.out.println("Mining block 1...");
+		System.out.println("\nMining block 1...");
 		JSONObject block1 = new JSONObject();
 		block1.put("amount", "40");
 		test.addBlock(new Block(1, block1.toString(), ""));
-		System.out.println(test.getLatestBlock().hash);
-		System.out.println(test.getLatestBlock().previousHash);
+		//System.out.println(test.getLatestBlock().hash);
+		System.out.println("prev " + test.getLatestBlock().previousHash);
 
-		System.out.println("Mining block 2...");
+		System.out.println("\nMining block 2...");
 		JSONObject block2 = new JSONObject();
 		block1.put("amount", "1000");
 		test.addBlock(new Block(2, block2.toString(), ""));
-		System.out.println(test.getLatestBlock().hash);
-		System.out.println(test.getLatestBlock().previousHash);
+		//System.out.println(test.getLatestBlock().hash);
+		System.out.println("prev " + test.getLatestBlock().previousHash);
 	}
 	
 }
