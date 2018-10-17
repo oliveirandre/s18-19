@@ -34,17 +34,15 @@ public class AuctionManager {
 					JSONObject jsonObject = new JSONObject(line);
 					List<JSONObject> test = new ArrayList<JSONObject>();
 					
-					if(jsonObject.get("action") == "create") {
-						System.out.println(jsonObject.toString());
- 						ar.store(jsonObject);
- 						test.add(jsonObject);
+					//if(jsonObject.get("action") == "create") {
+ 					//	test.add(jsonObject);
  						writer.write(jsonObject.toString() + "\n");
  						writer.flush();
-					}
+					/*}
 					else if(jsonObject.get("action") == "list") {
 						writer.write(test.get(0).toString());
 						writer.flush();
-					}
+					}*/
 				} catch (IOException e) {
 					e.printStackTrace();
 				} finally {

@@ -48,8 +48,6 @@ public class AuctionClient {
 	static OutputStreamWriter writer;
 	static BufferedReader reader;
 	static Socket s;
-	static JSONObject jsonObject = new JSONObject();
-	static JSONObject jsonObjectResp = new JSONObject();
 	static String line = "";
 	
 	public static void main(String[] args) throws IOException {
@@ -57,53 +55,57 @@ public class AuctionClient {
 		writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
 		reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
 		while(true) {
-		int action = menu();
-		if (action == 1) {
-			createAuction();
-		}
-		else if (action == 3) {
-			listAuctions();
-		}
-		/*else {
-			s.close();
-			System.exit(0);
-		}*/
-	}		
+			int action = menu();
+			if (action == 1) {
+				createAuction();
+			}
+			else if (action == 3) {
+				listAuctions();
+			}
+			/*else {
+				s.close();
+				System.exit(0);
+			}*/
+		}		
 	}
 
 	public static void createAuction() throws IOException {
+		JSONObject data = new JSONObject();
+		
 		//tipo de ação
-		jsonObject.put("action", "create");
+		data.put("action", "create");
 
 		//restrições da auction
 		
 		//envio dos dados para o servidor
-		writer.write(jsonObject.toString() + "\n");
+		writer.write(data.toString() + "\n");
 		writer.flush();
 
 		//recebimento dos dados enviados pelo servidor
 		line = reader.readLine();
-		jsonObject = new JSONObject(line);
+		JSONObject response = new JSONObject(line);
 		
-		System.out.println("Auction created sucessfuly: \n" + jsonObject);
+		System.out.println("Auction created sucessfuly: \n" + response);
 		
 		//readCommand();
 	}
 	
 	public static void listAuctions() throws IOException {
-		jsonObject.put("action", "list");
+		JSONObject data = new JSONObject();
+		data.put("action", "list");
 		
-		writer.write(jsonObject.toString() + "\n");
+		writer.write(data.toString() + "\n");
 		writer.flush();
 		
 		String auctions = reader.readLine();
-		jsonObjectResp = new JSONObject(auctions);
+		JSONObject response = new JSONObject(auctions);
 		
-		System.out.println(jsonObjectResp.toString());
+		System.out.println(response.toString());
 	}
 	
 	public static void terminateAuction() throws IOException {
-		jsonObject.put("action", "terminate");
+		JSONObject data = new JSONObject();
+		data.put("action", "terminate");
 	}
 	
 	public static int menu() {		
