@@ -1,4 +1,5 @@
 import java.net.Socket;
+import java.util.List;
 import java.util.Scanner;
 
 import org.json.JSONObject;
@@ -48,38 +49,45 @@ public class AuctionClient {
 	static BufferedReader reader;
 	static Socket s;
 	static JSONObject jsonObject = new JSONObject();
+	static JSONObject jsonObjectResp = new JSONObject();
 	static String line = "";
 	
 	public static void main(String[] args) throws IOException {
 		s = new Socket("localhost", 8080);
 		writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
 		reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
-		//while(true) {
-			int action = menu();
-			if (action == 1) {
-				createAuction();
-			}
-			/*else if (action == 3) {
-				listAuctions();
-			}
-			else {
-				s.close();
-				System.exit(0);
-			}
-		}	*/	
+		while(true) {
+		int action = menu();
+		if (action == 1) {
+			createAuction();
+		}
+		else if (action == 3) {
+			listAuctions();
+		}
+		/*else {
+			s.close();
+			System.exit(0);
+		}*/
+	}		
 	}
 
 	public static void createAuction() throws IOException {
+		//tipo de ação
 		jsonObject.put("action", "create");
-		//jsonObject.put("creatorid", "1");
+
+		//restrições da auction
 		
+		//envio dos dados para o servidor
 		writer.write(jsonObject.toString() + "\n");
 		writer.flush();
 
+		//recebimento dos dados enviados pelo servidor
 		line = reader.readLine();
 		jsonObject = new JSONObject(line);
 		
 		System.out.println("Auction created sucessfuly: \n" + jsonObject);
+		
+		//readCommand();
 	}
 	
 	public static void listAuctions() throws IOException {
@@ -88,10 +96,14 @@ public class AuctionClient {
 		writer.write(jsonObject.toString() + "\n");
 		writer.flush();
 		
-		line = reader.readLine();
-		jsonObject = new JSONObject(line);
+		String auctions = reader.readLine();
+		jsonObjectResp = new JSONObject(auctions);
 		
-		System.out.println(jsonObject.toString());
+		System.out.println(jsonObjectResp.toString());
+	}
+	
+	public static void terminateAuction() throws IOException {
+		jsonObject.put("action", "terminate");
 	}
 	
 	public static int menu() {		

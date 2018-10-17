@@ -7,8 +7,8 @@ import java.util.List;
 import org.json.JSONObject;
 
 public class AuctionManager {
-	
-	static List<JSONObject> auctions = new ArrayList<JSONObject>();
+
+	static AuctionRepository ar = new AuctionRepository();
 	
 	public static void main(String[] args) throws IOException {
 		ServerSocket ss = new ServerSocket(8080);
@@ -32,17 +32,19 @@ public class AuctionManager {
 					
 					String line = reader.readLine();
 					JSONObject jsonObject = new JSONObject(line);
+					List<JSONObject> test = new ArrayList<JSONObject>();
 					
 					if(jsonObject.get("action") == "create") {
-						auctions.add(jsonObject);
+						System.out.println(jsonObject.toString());
+ 						ar.store(jsonObject);
+ 						test.add(jsonObject);
+ 						writer.write(jsonObject.toString() + "\n");
+ 						writer.flush();
 					}
 					else if(jsonObject.get("action") == "list") {
-						for(int i = 0; i < auctions.size(); i++)
-							System.out.println(auctions.get(i));
+						writer.write(test.get(0).toString());
+						writer.flush();
 					}
-					
-					writer.write(jsonObject.toString() + "\n");
-					writer.flush();
 				} catch (IOException e) {
 					e.printStackTrace();
 				} finally {

@@ -1,5 +1,4 @@
 import java.io.IOException;
-import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,4 +12,12 @@ public class AuctionRepository {
 
 	}
 
+	public void store(JSONObject auction) throws IOException {
+		auctions.add(auction);
+		
+	}
+	
+	public List<JSONObject> list() throws IOException {
+		return auctions;
+	}	
 }
