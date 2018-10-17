@@ -1,4 +1,5 @@
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
@@ -49,12 +50,14 @@ public class AuctionClient {
 	static BufferedReader reader;
 	static Socket s;
 	static String line = "";
+	static List<JSONObject> test = new ArrayList<JSONObject>();
 	
 	public static void main(String[] args) throws IOException {
-		s = new Socket("localhost", 8080);
-		writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
-		reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
 		while(true) {
+			s = new Socket("localhost", 8080);
+			writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
+			reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
+			
 			int action = menu();
 			if (action == 1) {
 				createAuction();
@@ -84,6 +87,8 @@ public class AuctionClient {
 		//recebimento dos dados enviados pelo servidor
 		line = reader.readLine();
 		JSONObject response = new JSONObject(line);
+		
+		//test.add(data);
 		
 		System.out.println("Auction created sucessfuly: \n" + response);
 		
