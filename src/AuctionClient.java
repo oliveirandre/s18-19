@@ -57,6 +57,18 @@ public class AuctionClient {
 
 	public static void main(String[] args) throws IOException {
 		System.out.println("Welcome to our Auction Client!");
+
+		s = new Socket("localhost", 8080);
+		writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
+		reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
+
+		JSONObject data = new JSONObject();
+		data.put("action" , "newClient");
+		writer.write(data.toString() + "\n");
+		writer.flush();
+		line = reader.readLine();
+		System.out.println("És o utilizador numero:  "  + line);
+
 		while(true) {
 			s = new Socket("localhost", 8080);
 			writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
@@ -83,35 +95,35 @@ public class AuctionClient {
 		System.out.println("Please describe what you are auctioning: ");
 		System.out.print("> ");
 		String description = sc.next();
-		
+
 		//restrições da auction
 		System.out.println("\nWhat type of auction do you wish to create?");
 		System.out.println("1 - Ascending price auction");
 		System.out.println("2 - Blind auction");
 		System.out.print("> ");
-		int type = sc.nextInt();		
+		int type = sc.nextInt();
 		if(type == 1)
 			data.put("type", "ascending");
-		
+
 		else if(type == 2) {
 			System.out.println("\nDo you want the bidders to be public or private?");
 			System.out.println("1 - Public");
 			System.out.println("2 - Private");
 			System.out.print("> ");
-			int identity = sc.nextInt();		
+			int identity = sc.nextInt();
 			if(identity == 1)
 				data.put("identity", "public");
 			else if(identity == 2)
 				data.put("identity", "private");
-			else	
+			else
 				return;
 			data.put("type", "blind");
 		}
-		
-		else	
+
+		else
 			return;
 
-		Date timestamp = new Date();		
+		Date timestamp = new Date();
 		data.put("timestamp", timestamp);
 		data.put("description", description);
 		data.put("action", "create");

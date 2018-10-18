@@ -12,11 +12,13 @@ public class AuctionManager {
 	static AuctionRepository ar = new AuctionRepository();
 	static List<JSONObject> test;
 	static Blockchain blockChain;
-	
+	static List<Integer> user;
+
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-		ServerSocket ss = new ServerSocket(8080);						
-		blockChain = new Blockchain(); 
+		ServerSocket ss = new ServerSocket(8080);
+		blockChain = new Blockchain();
 		System.out.println("Genesis Block Hash: \n" + blockChain.getLatestBlock().hash);
+		user = new ArrayList<Integer>();
 		test = new ArrayList<JSONObject>();
 		try {
 			while(true) {
@@ -37,26 +39,31 @@ public class AuctionManager {
 					BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
 					String line = reader.readLine();
 					JSONObject jsonObject = new JSONObject(line);
-					
+
 					if(jsonObject.get("action").equals("create")) {
  						test.add(jsonObject);
- 						
+
  						System.out.println("\nMining block...");
  						blockChain.addBlock(new Block(1, jsonObject.toString(), jsonObject.get("timestamp").toString() , ""));
  						System.out.println("Previous block: " + blockChain.getLatestBlock().previousHash);
  						writer.write(jsonObject.toString() + "\n");
  						writer.flush();
 					}
-					
+
 					else if(jsonObject.get("action").equals("list")) {
-						
+
 						System.out.println(test.size());
 						for(int i=0; i<test.size();i++) {
 							writer.append(test.get(i).toString());
 
 						}
-						writer.write(test.get(0).toString());
 						writer.flush();
+					}else if(jsonObject.get("action").equals("newClient")){
+							System.out.println("new Client");
+							user.add(user.size()+1);
+							System.out.println(user.get(user.size()-1));
+							writer.write(""+user.get(user.size()-1));
+							writer.flush();
 					}
 
 				} catch (IOException e) {
