@@ -1,5 +1,8 @@
 import java.net.Socket;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Scanner;
 
@@ -35,9 +38,9 @@ import java.io.OutputStreamWriter;
  * apenas quando o seu criador a termine? Por exemplo haver um timer.
  *
  * -> Uma action pode ter um campo de description, para ser mais fácil a identificação de cada
- * auction (por exemplo, uma auction de quê em concreto).
+ * auction (por exemplo, uma auction de quê em concreto). y
  *
- * -> Quando uma bid é criada tem de ser resolvido um criptopuzzle.
+ * -> Quando uma bid é criada tem de ser resolvido um criptopuzzle. y
  *
  * -> As bids são mandadas para o repositório, depois é validado pelo manager, e depois volta
  * para o repositório.
@@ -53,6 +56,7 @@ public class AuctionClient {
 	static List<JSONObject> test = new ArrayList<JSONObject>();
 
 	public static void main(String[] args) throws IOException {
+		System.out.println("Welcome to our Auction Client!");
 		while(true) {
 			s = new Socket("localhost", 8080);
 			writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
@@ -65,21 +69,52 @@ public class AuctionClient {
 			else if (action == 3) {
 				listAuctions();
 			}
-			/*else {
+			else if (action == 0) {
 				s.close();
 				System.exit(0);
-			}*/
+			}
 		}
 	}
 
 	public static void createAuction() throws IOException {
 		JSONObject data = new JSONObject();
 
-		//tipo de ação
-		data.put("action", "create");
-
+		System.out.println("\n - AUCTION CREATION - \n");
+		System.out.println("Please describe what you are auctioning: ");
+		System.out.print("> ");
+		String description = sc.next();
+		
 		//restrições da auction
+		System.out.println("\nWhat type of auction do you wish to create?");
+		System.out.println("1 - Ascending price auction");
+		System.out.println("2 - Blind auction");
+		System.out.print("> ");
+		int type = sc.nextInt();		
+		if(type == 1)
+			data.put("type", "ascending");
+		
+		else if(type == 2) {
+			System.out.println("\nDo you want the bidders to be public or private?");
+			System.out.println("1 - Public");
+			System.out.println("2 - Private");
+			System.out.print("> ");
+			int identity = sc.nextInt();		
+			if(identity == 1)
+				data.put("identity", "public");
+			else if(identity == 2)
+				data.put("identity", "private");
+			else	
+				return;
+			data.put("type", "blind");
+		}
+		
+		else	
+			return;
 
+		Date timestamp = new Date();		
+		data.put("timestamp", timestamp);
+		data.put("description", description);
+		data.put("action", "create");
 		//envio dos dados para o servidor
 		writer.write(data.toString() + "\n");
 		writer.flush();
@@ -90,7 +125,7 @@ public class AuctionClient {
 
 		//test.add(data);
 
-		System.out.println("Auction created sucessfuly: \n" + response);
+		System.out.println("\nAuction created sucessfuly: \n" + response);
 
 		//readCommand();
 	}
@@ -114,7 +149,7 @@ public class AuctionClient {
 	}
 
 	public static int menu() {
-		System.out.println("Welcome to our Auction Client!");
+		System.out.println("\n-----------------------------------\n");
 		System.out.println("What would you like to do?");
 		System.out.println("1 - Create an auction.");
 		System.out.println("2 - Terminate an auction.");

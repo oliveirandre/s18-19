@@ -1,37 +1,34 @@
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
-import java.util.stream.Collectors;
-
 import org.json.JSONObject;
-
-//Falta a proof of work!
 
 class Block {
 	
 	int index;
 	String data;
 	String previousHash = "";
-	//timestamp;
+	String timestamp;
 	String hash;
 	int nonce;
 	
-	public Block(int index, String data, String previousHash) throws NoSuchAlgorithmException { //falta timestamp 
+	public Block(int index, String data, String timestamp, String previousHash) throws NoSuchAlgorithmException {
 		this.index = index;
 		this.data = data;
-		//this.timestamp = timestamp;
+		this.timestamp = timestamp;
 		this.previousHash = previousHash;
 		this.hash = this.calculateHash();
 		this.nonce = 0;
 	}
 	
 	public String calculateHash() throws NoSuchAlgorithmException {
-		//retorna hash da soma dos campos todos (this.index + this.timestamp + this.data.toString() + this.nonce).toString();
 		MessageDigest md = MessageDigest.getInstance("SHA-256");
-		String input = this.index + this.previousHash + this.data.toString() + this.nonce;
+		String input = this.index + this.previousHash + this.data.toString() + this.timestamp.toString() + this.nonce;
 		md.update(input.getBytes());
 		byte[] digest = md.digest();
 		StringBuffer sb = new StringBuffer();
@@ -41,7 +38,7 @@ class Block {
 		return sb.toString();
 	}
 	
-	public void mineBlock(int difficulty) throws NoSuchAlgorithmException { //O problema está aqui!
+	public void mineBlock(int difficulty) throws NoSuchAlgorithmException {
 		String comparison = "";
 		for(int i = 0; i < difficulty; i++) {
 			comparison += "0";
@@ -61,11 +58,12 @@ class Blockchain {
 	
 	public Blockchain() throws NoSuchAlgorithmException {
 		this.chain.add(createGenesis());
-		this.difficulty = 3;
+		this.difficulty = 4;
 	}
 	
 	public Block createGenesis() throws NoSuchAlgorithmException {
-		return new Block(0, "Genesis Block", "0");
+		Date timestamp = new Date();
+		return new Block(0, "Genesis Block", timestamp.toString(), "0");
 	}
 	
 	public Block getLatestBlock() {
@@ -95,7 +93,7 @@ class Blockchain {
 public class AuctionRepository {
 
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-		
+		/*
 		Blockchain test = new Blockchain();
 		
 		System.out.println("Genesis Block Hash: \n" + test.getLatestBlock().hash);
@@ -112,7 +110,7 @@ public class AuctionRepository {
 		block1.put("amount", "1000");
 		test.addBlock(new Block(2, block2.toString(), ""));
 		//System.out.println(test.getLatestBlock().hash);
-		System.out.println("prev " + test.getLatestBlock().previousHash);
+		System.out.println("prev " + test.getLatestBlock().previousHash);*/
 	}
 	
 }
