@@ -11,13 +11,10 @@ public class AuctionManager {
 
 	static AuctionRepository ar = new AuctionRepository();
 	static List<JSONObject> test;
-	static Blockchain blockChain;
 	static List<Integer> user;
 
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
 		ServerSocket ss = new ServerSocket(8080);
-		blockChain = new Blockchain();
-		System.out.println("Genesis Block Hash: \n" + blockChain.getLatestBlock().hash);
 		user = new ArrayList<Integer>();
 		test = new ArrayList<JSONObject>();
 		try {
@@ -42,30 +39,46 @@ public class AuctionManager {
 
 					if(jsonObject.get("action").equals("create")) {
  						test.add(jsonObject);
-
- 						System.out.println("\nMining block...");
+ 						Blockchain blockChain = new Blockchain();
+ 						System.out.println("Genesis Block Hash: \n" + blockChain.getLatestBlock().hash);
+ 						/*System.out.println("\nMining block...");
  						blockChain.addBlock(new Block(1, jsonObject.toString(), jsonObject.get("timestamp").toString() , ""));
- 						System.out.println("Previous block: " + blockChain.getLatestBlock().previousHash);
+ 						System.out.println("Previous block: " + blockChain.getLatestBlock().previousHash);*/
  						writer.write(jsonObject.toString() + "\n");
  						writer.flush();
 					}
 
 					else if(jsonObject.get("action").equals("list")) {
-
 						System.out.println(test.size());
 						for(int i=0; i<test.size();i++) {
-							writer.append(test.get(i).toString());
-
+							writer.append(test.get(i).get("description").toString() + " | Created by the client with id " + test.get(i).get("creatorid").toString() + "\n");
 						}
 						writer.flush();
-					}else if(jsonObject.get("action").equals("newClient")){
-							System.out.println("new Client");
-							user.add(user.size()+1);
-							System.out.println(user.get(user.size()-1));
-							writer.write(""+user.get(user.size()-1));
-							writer.flush();
 					}
-
+					
+					else if(jsonObject.get("action").equals("newClient")){
+						System.out.println("new Client");
+						user.add(user.size()+1);
+						System.out.println(user.get(user.size()-1));
+						writer.write(""+user.get(user.size()-1));
+						writer.flush();
+					}
+					else if(jsonObject.get("action").equals("terminate")) {
+						String clientid = jsonObject.get("creatorid").toString();
+						for(int i=0; i<test.size();i++) {
+							if(clientid.equals(test.get(i).get("creatorid").toString()))
+								writer.append(test.get(i).toString());
+						}
+					}
+					
+					else if(jsonObject.get("action").equals("bid")) {
+						System.out.println(test.size());
+						for(int i=0; i<test.size();i++) {
+							int j = i + 1;
+							writer.append(j + " - " +test.get(i).get("description").toString() + " | Created by the client with id " + test.get(i).get("creatorid").toString() + "\n");
+						}
+						writer.flush();
+					}
 				} catch (IOException e) {
 					e.printStackTrace();
 				} catch (NoSuchAlgorithmException e) {

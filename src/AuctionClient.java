@@ -54,6 +54,7 @@ public class AuctionClient {
 	static Socket s;
 	static String line = "";
 	static List<JSONObject> test = new ArrayList<JSONObject>();
+	static int clientid;
 
 	public static void main(String[] args) throws IOException {
 		System.out.println("Welcome to our Auction Client!");
@@ -67,6 +68,7 @@ public class AuctionClient {
 		writer.write(data.toString() + "\n");
 		writer.flush();
 		line = reader.readLine();
+		clientid = Integer.parseInt(line);
 		System.out.println("És o utilizador numero:  "  + line);
 
 		while(true) {
@@ -77,6 +79,9 @@ public class AuctionClient {
 			int action = menu();
 			if (action == 1) {
 				createAuction();
+			}
+			else if(action == 2) {
+				terminateAuction();
 			}
 			else if (action == 3) {
 				listAuctions();
@@ -127,6 +132,7 @@ public class AuctionClient {
 		data.put("timestamp", timestamp);
 		data.put("description", description);
 		data.put("action", "create");
+		data.put("creatorid", clientid);
 		//envio dos dados para o servidor
 		writer.write(data.toString() + "\n");
 		writer.flush();
@@ -158,6 +164,20 @@ public class AuctionClient {
 	public static void terminateAuction() throws IOException {
 		JSONObject data = new JSONObject();
 		data.put("action", "terminate");
+		data.put("creatorid", clientid);
+		writer.write(data.toString() + "\n");
+		writer.flush();
+		line = reader.readLine();
+		System.out.println(line);
+	}
+	
+	public static void bidOnAuction() throws IOException {
+		JSONObject data = new JSONObject();
+		data.put("action", "bid");
+		System.out.print("To which auction do you wish to bid?");
+
+		line = reader.readLine();
+		System.out.println(line);
 	}
 
 	public static int menu() {
