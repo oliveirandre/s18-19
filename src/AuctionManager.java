@@ -1,102 +1,67 @@
 import java.io.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Formatter;
 import java.util.List;
-
 import org.json.JSONObject;
 
-public class AuctionManager {
+public class AuctionManager implements Runnable {
+	
+	public static int client = 0;
 
-	static AuctionRepository ar = new AuctionRepository();
-	static List<JSONObject> test;
-	static List<Integer> user;
-
+	public void run() {
+		
+	}
+	
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-		ServerSocket ss = new ServerSocket(8080);
-		user = new ArrayList<Integer>();
-		test = new ArrayList<JSONObject>();
-		try {
-			while(true) {
-				Socket s = ss.accept();
-				startHandler(s);
-			}
-		} finally {
-			ss.close();
+		DatagramSocket ds = new DatagramSocket(8000);
+		while(true) {
+			byte[] b = new byte[1024];
+			DatagramPacket dp = new DatagramPacket(b, b.length);
+			ds.receive(dp);
+			String line = new String(dp.getData());
+			JSONObject jsonObject = new JSONObject(line);
+			readCommand(jsonObject, dp, ds);
 		}
 	}
 
-	private static void startHandler(Socket s) throws IOException {
-		Thread t = new Thread() {
-			@Override
-			public void run() {
-				try {
-					OutputStreamWriter writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
-					BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
-					String line = reader.readLine();
-					JSONObject jsonObject = new JSONObject(line);
-
-					if(jsonObject.get("action").equals("create")) {
- 						test.add(jsonObject);
- 						Blockchain blockChain = new Blockchain();
- 						System.out.println("Genesis Block Hash: \n" + blockChain.getLatestBlock().hash);
- 						/*System.out.println("\nMining block...");
- 						blockChain.addBlock(new Block(1, jsonObject.toString(), jsonObject.get("timestamp").toString() , ""));
- 						System.out.println("Previous block: " + blockChain.getLatestBlock().previousHash);*/
- 						writer.write(jsonObject.toString() + "\n");
- 						writer.flush();
-					}
-
-					else if(jsonObject.get("action").equals("list")) {
-						System.out.println(test.size());
-						for(int i=0; i<test.size();i++) {
-							writer.append(test.get(i).get("description").toString() + " | Created by the client with id " + test.get(i).get("creatorid").toString() + "\n");
-						}
-						writer.flush();
-					}
-					
-					else if(jsonObject.get("action").equals("newClient")){
-						System.out.println("new Client");
-						user.add(user.size()+1);
-						System.out.println(user.get(user.size()-1));
-						writer.write(""+user.get(user.size()-1));
-						writer.flush();
-					}
-					else if(jsonObject.get("action").equals("terminate")) {
-						String clientid = jsonObject.get("creatorid").toString();
-						for(int i=0; i<test.size();i++) {
-							if(clientid.equals(test.get(i).get("creatorid").toString()))
-								writer.append(test.get(i).toString());
-						}
-					}
-					
-					else if(jsonObject.get("action").equals("bid")) {
-						System.out.println(test.size());
-						for(int i=0; i<test.size();i++) {
-							int j = i + 1;
-							writer.append(j + " - " +test.get(i).get("description").toString() + " | Created by the client with id " + test.get(i).get("creatorid").toString() + "\n");
-						}
-						writer.flush();
-					}
-				} catch (IOException e) {
-					e.printStackTrace();
-				} catch (NoSuchAlgorithmException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} finally {
-					closeSocket();
-				}
-			}
-
-			private void closeSocket() {
-				try {
-					s.close();
-				} catch(IOException e) {
-
-				}
-			}
-		};
-		t.start();
+	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws IOException {
+		//ESTABLISHES THE ID OF A NEW CLIENT
+		if(jsonObject.get("action").equals("newclient")) {
+			System.out.println("New client connecting!");
+			client++;
+			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + client + ".txt"));
+			writer.write("Client connected sucessfuly!\n");
+			writer.close();
+			byte[] b1 = String.valueOf(client).getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+		
+		//CREATE A NEW AUCTION
+		if(jsonObject.get("action").equals("create")) {
+			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getString("creatorid") + ".txt", true));
+			writer.append(jsonObject.toString() + "\n");
+			writer.close();
+			System.out.println(jsonObject.toString());
+			DatagramSocket ds1 = new DatagramSocket();
+			InetAddress ia = InetAddress.getLocalHost();
+			byte[] b = jsonObject.toString().getBytes();
+			DatagramPacket dp1 = new DatagramPacket(b, b.length, ia, 9000);
+			ds1.send(dp1);
+		}
+		
+		//NEW BID
+		if(jsonObject.get("action").equals("bid")) {
+			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getString("creatorid") + ".txt", true));
+			writer.append(jsonObject.toString() + "\n");
+			writer.close();
+		}
 	}
 }

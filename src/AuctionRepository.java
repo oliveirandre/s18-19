@@ -1,4 +1,7 @@
 import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.DateFormat;
@@ -6,6 +9,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+
+import org.json.JSONException;
 import org.json.JSONObject;
 
 class Block {
@@ -55,15 +60,22 @@ class Blockchain {
 	
 	List<Block> chain = new ArrayList<Block>();
 	int difficulty;
+	int id;
+	String creator;
+	String description;
+	int i = 0;
 	
-	public Blockchain() throws NoSuchAlgorithmException {
+	public Blockchain(int id, String description, String creator) throws NoSuchAlgorithmException {
 		this.chain.add(createGenesis());
 		this.difficulty = 4;
+		this.id = id;
+		this.description = description;
+		this.creator = creator;
 	}
 	
 	public Block createGenesis() throws NoSuchAlgorithmException {
 		Date timestamp = new Date();
-		return new Block(0, "Genesis Block", timestamp.toString(), "0");
+		return new Block(i, "0", timestamp.toString(), "0");
 	}
 	
 	public Block getLatestBlock() {
@@ -71,9 +83,10 @@ class Blockchain {
 	}
 	
 	public void addBlock(Block newBlock) throws NoSuchAlgorithmException {
+		i++;
+		newBlock.index = i;
 		newBlock.previousHash = this.getLatestBlock().hash;
 		newBlock.mineBlock(this.difficulty);
-		//newBlock.hash = newBlock.calculateHash();
 		this.chain.add(newBlock);
 	}
 	
@@ -88,29 +101,136 @@ class Blockchain {
 		}
 		return true;
 	}
+	
+	public List<String> printChain() {
+		List<String> bids = new ArrayList<String>();
+		for(int i = 0; i < chain.size(); i++) {
+			bids.add(chain.get(i).data);
+		}
+		return bids;
+	}
 }
 
 public class AuctionRepository {
 
+	static int blockchainid = 0;
+	static List<Blockchain> auctions = new ArrayList<Blockchain>();
+	static List<Blockchain> terminated = new ArrayList<Blockchain>();
+	
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-		/*
-		Blockchain test = new Blockchain();
+		DatagramSocket ds = new DatagramSocket(9000);
+		while(true) {
+			byte[] b = new byte[1024];
+			DatagramPacket dp = new DatagramPacket(b, b.length);
+			ds.receive(dp);
+			String line = new String(dp.getData());
+			JSONObject jsonObject = new JSONObject(line);
+			readCommand(jsonObject, dp, ds);
+		}
+	}
+	
+	public static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws IOException, NoSuchAlgorithmException, JSONException {
+		//CREATE AN AUCTION ON THE REPOSITORY, AFTER PASSING THROUGH THE MANAGER
+		if(jsonObject.get("action").equals("create")) { 
+			Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), jsonObject.getString("creatorid"));
+			blockchainid++;
+			auctions.add(blockChain);
+			System.out.println("Genesis Block Hash of Blockchain " + blockChain.id + ": \n" + blockChain.getLatestBlock().hash);
+		}
 		
-		System.out.println("Genesis Block Hash: \n" + test.getLatestBlock().hash);
+		//LISTS ALL AUCTIONS AFTER A REQUEST FROM A CLIENT
+		else if(jsonObject.get("action").equals("list")) {
+			String list = "";
+			for(int i = 0; i < auctions.size(); i++) {
+				list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + auctions.get(i).creator + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + "\n";
+			}
+			byte[] b1 = list.getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
 		
-		System.out.println("\nMining block 1...");
-		JSONObject block1 = new JSONObject();
-		block1.put("amount", "40");
-		test.addBlock(new Block(1, block1.toString(), ""));
-		//System.out.println(test.getLatestBlock().hash);
-		System.out.println("prev " + test.getLatestBlock().previousHash);
-
-		System.out.println("\nMining block 2...");
-		JSONObject block2 = new JSONObject();
-		block1.put("amount", "1000");
-		test.addBlock(new Block(2, block2.toString(), ""));
-		//System.out.println(test.getLatestBlock().hash);
-		System.out.println("prev " + test.getLatestBlock().previousHash);*/
+		//LISTS ALL AUCTIONS FROM OTHER CLIENTS
+		else if(jsonObject.get("action").equals("listothers")) {
+			String list = "";
+			for(int i = 0; i < auctions.size(); i++) {
+				if(!auctions.get(i).creator.equals(jsonObject.getString("creatorid"))) {
+					list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + auctions.get(i).creator + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + "\n";	
+				}
+			}
+			byte[] b1 = list.getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+		
+		//LISTS ALL AUCTIONS FROM THIS CLIENT
+		else if(jsonObject.get("action").equals("listmine")) {
+			String list = "";
+			for(int i = 0; i < auctions.size(); i++) {
+				if(auctions.get(i).creator.equals(jsonObject.getString("creatorid"))) {
+					list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + auctions.get(i).creator + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + "\n";
+				}
+			}
+			byte[] b1 = list.getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+		
+		//BIDS ON AN EXISTING AUCTION AFTER A REQUEST FROM A CLIENT
+		else if(jsonObject.get("action").equals("bid")) {
+			int auction = jsonObject.getInt("auction");
+			int index = 0;
+			for(int i = 0; i < auctions.size(); i++) {
+				if(i == auction) {
+					if(Integer.parseInt(auctions.get(i).getLatestBlock().data) >= jsonObject.getInt("value")) {
+						byte[] b1 = "Value inserted is inferior to the highest bid!".getBytes();
+						InetAddress ia = InetAddress.getLocalHost();
+						DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+						ds.send(dp1);
+					}
+					else {
+						index = auctions.get(i).getLatestBlock().index;
+						index++;
+						auctions.get(i).addBlock(new Block(index, jsonObject.get("value").toString(), jsonObject.getString("timestamp"), ""));
+						byte[] b1 = jsonObject.toString().getBytes();
+						InetAddress ia = InetAddress.getLocalHost();
+						DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
+						ds.send(dp1);
+						byte[] b2 = "".getBytes();
+						InetAddress ia2 = InetAddress.getLocalHost();
+						DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia2, dp.getPort());
+						ds.send(dp2);
+					}
+				}
+			}
+		}
+		
+		//TERMINATES AN AUCTION AFTER A REQUEST FROM A CLIENT
+		else if(jsonObject.get("action").equals("terminate")) {
+			for(int i = 0; i < auctions.size(); i++) {
+				if(i == jsonObject.getInt("position")) {
+					terminated.add(auctions.get(i));
+					auctions.remove(i);
+				}
+			}
+		}
+		
+		//SHOWS BIDS OF AN AUCTION
+		else if(jsonObject.get("action").equals("showbids")) {
+			List<String> bids = new ArrayList<String>();
+			int auction = jsonObject.getInt("auction");
+			for(int i = 0; i < auctions.size(); i++) {
+				if(i == auction) {
+					bids = auctions.get(i).printChain();
+				}
+			}
+			byte[] b1 = bids.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
 	}
 	
 }

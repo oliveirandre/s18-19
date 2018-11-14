@@ -1,3 +1,6 @@
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -5,11 +8,13 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Scanner;
-
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 
 /*
@@ -46,37 +51,19 @@ import java.io.OutputStreamWriter;
  * para o repositório.
  */
 
-public class AuctionClient {
+public class AuctionClient implements Runnable {
 
 	static Scanner sc = new Scanner(System.in);
-	static OutputStreamWriter writer;
-	static BufferedReader reader;
-	static Socket s;
 	static String line = "";
 	static List<JSONObject> test = new ArrayList<JSONObject>();
-	static int clientid;
+	static String clientid;
 
-	public static void main(String[] args) throws IOException {
-		System.out.println("Welcome to our Auction Client!");
-
-		s = new Socket("localhost", 8080);
-		writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
-		reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
-
-		JSONObject data = new JSONObject();
-		data.put("action" , "newClient");
-		writer.write(data.toString() + "\n");
-		writer.flush();
-		line = reader.readLine();
-		clientid = Integer.parseInt(line);
-		System.out.println("És o utilizador numero:  "  + line);
-
-		while(true) {
-			s = new Socket("localhost", 8080);
-			writer = new OutputStreamWriter(s.getOutputStream(), "UTF-8");
-			reader = new BufferedReader(new InputStreamReader(s.getInputStream(), "UTF-8"));
-
-			int action = menu();
+	public void run() {
+		
+	}
+	
+	public static void executeCommand(int action) {
+		try {
 			if (action == 1) {
 				createAuction();
 			}
@@ -86,22 +73,55 @@ public class AuctionClient {
 			else if (action == 3) {
 				listAuctions();
 			}
+			else if(action == 4) {
+				bidOnAuction();
+			}
+			else if(action == 5) {
+				displayBids();
+			}
 			else if (action == 0) {
-				s.close();
 				System.exit(0);
 			}
+		} catch(Exception e) {
+			
+		}
+	}
+	
+	public static void main(String[] args) throws IOException {
+		//NEW CLIENT CONNECTION
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		InetAddress ia = InetAddress.getLocalHost();
+		data.put("action", "newclient");
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 8000);
+		ds.send(dp);
+		//RESPONSE FROM REPOSITORY
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		clientid = response;
+		clientid = clientid.replace("\u0000", "");
+		//CREATES A FILE FOR THIS CLIENT
+		File f = new File("Receipts/client" + response + ".txt");
+		System.out.println("Welcome to our Auction Client!");
+		System.out.println("You are the client number " + response + "!");
+		while(true) {
+			int action = menu();
+			executeCommand(action);
 		}
 	}
 
+	//CREATES A NEW AUCTION
 	public static void createAuction() throws IOException {
+		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
-
 		System.out.println("\n - AUCTION CREATION - \n");
 		System.out.println("Please describe what you are auctioning: ");
 		System.out.print("> ");
 		String description = sc.next();
-
-		//restrições da auction
+		//RESTRICTIONS OF AN AUCTION	
 		System.out.println("\nWhat type of auction do you wish to create?");
 		System.out.println("1 - Ascending price auction");
 		System.out.println("2 - Blind auction");
@@ -109,7 +129,6 @@ public class AuctionClient {
 		int type = sc.nextInt();
 		if(type == 1)
 			data.put("type", "ascending");
-
 		else if(type == 2) {
 			System.out.println("\nDo you want the bidders to be public or private?");
 			System.out.println("1 - Public");
@@ -124,60 +143,145 @@ public class AuctionClient {
 				return;
 			data.put("type", "blind");
 		}
-
 		else
 			return;
-
 		Date timestamp = new Date();
 		data.put("timestamp", timestamp);
 		data.put("description", description);
 		data.put("action", "create");
 		data.put("creatorid", clientid);
-		//envio dos dados para o servidor
-		writer.write(data.toString() + "\n");
-		writer.flush();
-
-		//recebimento dos dados enviados pelo servidor
-		line = reader.readLine();
-		JSONObject response = new JSONObject(line);
-
-		//test.add(data);
-
-		System.out.println("\nAuction created sucessfuly: \n" + response);
-
-		//readCommand();
+		JSONArray arr = new JSONArray();
+		arr.put(0);
+		data.put("bid", arr);
+		System.out.println(data);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 8000);
+		ds.send(dp);
 	}
 
+	//LISTS ALL EXISTING AUCTIONS
 	public static void listAuctions() throws IOException {
+		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		data.put("action", "list");
-
-		writer.write(data.toString() + "\n");
-		writer.flush();
-
-		String auctions = reader.readLine();
-		//JSONObject response = new JSONObject(auctions);
-
-		System.out.println(auctions);
-	}
-
-	public static void terminateAuction() throws IOException {
-		JSONObject data = new JSONObject();
-		data.put("action", "terminate");
-		data.put("creatorid", clientid);
-		writer.write(data.toString() + "\n");
-		writer.flush();
-		line = reader.readLine();
-		System.out.println(line);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+		//RESPONSE FROM REPOSITORY
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		System.out.println(response);
 	}
 	
-	public static void bidOnAuction() throws IOException {
+	//LISTS ALL AUCTIONS FROM OTHER CLIENTS
+	public static void listOthersAuctions() throws IOException {
+		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
-		data.put("action", "bid");
-		System.out.print("To which auction do you wish to bid?");
+		data.put("action", "listothers");
+		data.put("creatorid", clientid);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+		//RESPONSE FROM REPOSITORY
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		System.out.println(response);
+	}
+	
+	//LISTS ALL AUCTIONS FROM THIS CLIENT
+	public static void listMyAuctions() throws IOException {
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		data.put("action", "listmine");
+		data.put("creatorid", clientid);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+		//RESPONSE FROM REPOSITORY
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		System.out.println(response);
+	}
 
-		line = reader.readLine();
-		System.out.println(line);
+	//TERMINATES AN AUCTION
+	public static void terminateAuction() throws IOException {
+		listMyAuctions();
+		System.out.println("Which auction do you wish to terminate?");
+		System.out.print("> ");
+		int choice = sc.nextInt();
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		data.put("creatorid", clientid);
+		data.put("action", "terminate");
+		data.put("position", choice);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+	}
+	
+	//BID ON AN EXISTING AUCTION
+	public static void bidOnAuction() throws IOException {
+		listOthersAuctions();
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data1 = new JSONObject();
+		System.out.println("\nTo which auction do you wish to bid?");
+		System.out.print("> ");
+		int choice = sc.nextInt();
+		System.out.println("Value: ");
+		System.out.print("> ");
+		int value = sc.nextInt();
+		Date timestamp = new Date();
+		data1.put("creatorid", clientid);
+		data1.put("timestamp", timestamp);
+		data1.put("action", "bid");
+		data1.put("auction", choice);
+		data1.put("value", value);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data1.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+		//RESPONSE FROM THE SERVER
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		System.out.println(response);
+	}
+	
+	//DISPLAY ALL BIDS OF A CHOSEN AUCTION
+	public static void displayBids() throws IOException {
+		listAuctions();
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		System.out.println("\nChoose an auction.");
+		System.out.print("> ");
+		int choice = sc.nextInt();
+		Date timestamp = new Date();
+		data.put("timestamp", timestamp);
+		data.put("creatorid", clientid);
+		data.put("action", "showbids");
+		data.put("auction", choice);
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+		//RESPONSE FROM REPOSITORY
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		System.out.println(response);
 	}
 
 	public static int menu() {
@@ -186,10 +290,11 @@ public class AuctionClient {
 		System.out.println("1 - Create an auction.");
 		System.out.println("2 - Terminate an auction.");
 		System.out.println("3 - List open and closed auctions.");
-		System.out.println("4 - Display all current bids of an auction.");
-		System.out.println("5 - Display all bids sent by a client.");
-		System.out.println("6 - Check the outcome of an auction where you have participated.");
-		System.out.println("7 - Check a receipt.");
+		System.out.println("4 - Bid on an auction.");
+		System.out.println("5 - Display all current bids of an auction.");
+		System.out.println("6 - Display all bids sent by a client.");
+		System.out.println("7 - Check the outcome of an auction where you have participated.");
+		System.out.println("8 - Check a receipt.");
 		System.out.println("0 - Exit.");
 		System.out.print("Enter your choice: ");
 		int choice = sc.nextInt();
