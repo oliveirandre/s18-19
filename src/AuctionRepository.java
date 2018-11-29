@@ -2,13 +2,17 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.security.Key;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+
+import javax.crypto.spec.SecretKeySpec;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -116,8 +120,13 @@ public class AuctionRepository {
 	static int blockchainid = 0;
 	static List<Blockchain> auctions = new ArrayList<Blockchain>();
 	static List<Blockchain> terminated = new ArrayList<Blockchain>();
+	private static Key pub;
+	private static Key prv;
+	static Base64.Encoder encoder = Base64.getEncoder();
+	static Base64.Decoder decoder = Base64.getDecoder();
 	
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
+		generateKeys();
 		DatagramSocket ds = new DatagramSocket(9000);
 		while(true) {
 			byte[] b = new byte[1024];
@@ -130,6 +139,21 @@ public class AuctionRepository {
 	}
 	
 	public static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws IOException, NoSuchAlgorithmException, JSONException {
+		//KEY EXCHANGE BETWEEN SERVERS
+		if(jsonObject.get("action").equals("serverconnection")) {
+			System.out.println(jsonObject.getString("pubkey"));
+			byte[] pubManagerBytes = decoder.decode(jsonObject.getString("pubkey"));
+			Key pubManagerKey = new SecretKeySpec(pubManagerBytes, 0, pubManagerBytes.length, "DES"); ;
+			JSONObject data = new JSONObject();
+			data.put("action", "serverconnection");
+			String repPubKey = encoder.encodeToString(pub.getEncoded());
+			data.put("pubkey", repPubKey);
+			byte[] b1 = data.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
+			ds.send(dp1);	
+		}
+		
 		//CREATE AN AUCTION ON THE REPOSITORY, AFTER PASSING THROUGH THE MANAGER
 		if(jsonObject.get("action").equals("create")) { 
 			Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), jsonObject.getString("creatorid"));
@@ -232,5 +256,16 @@ public class AuctionRepository {
 			ds.send(dp1);
 		}
 	}
-	
+	static void generateKeys() throws NoSuchAlgorithmException {
+		KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+		kpg.initialize(2048);
+		KeyPair kp = kpg.generateKeyPair();
+		Key pub = kp.getPublic();
+		Key pvt = kp.getPrivate();		
+		//String outFile = "private";
+		Base64.Encoder encoder = Base64.getEncoder();
+		//Writer out = new FileWriter(outFile + ".key");
+		//out.write(encoder.encodeToString(pvt.getEncoded()));
+		//out.close();
+	}
 }

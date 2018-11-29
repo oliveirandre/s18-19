@@ -2,23 +2,35 @@ import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.security.Key;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Formatter;
-import java.util.List;
 import org.json.JSONObject;
+import java.util.Base64;
 
-public class AuctionManager implements Runnable {
+public class AuctionManager {
 	
 	public static int client = 0;
-
-	public void run() {
-		
-	}
+	private static String pubKey;
+	private static Key prv;
+	static Base64.Encoder encoder = Base64.getEncoder();
+	static Base64.Decoder decoder = Base64.getDecoder();
 	
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
+		generateKeys();	
+		
+		//KEY EXCHANGE BETWEEN SERVERS
+		DatagramSocket ds1 = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		InetAddress ia = InetAddress.getLocalHost();
+		data.put("action", "serverconnection");
+		data.put("pubkey", pubKey);
+		System.out.println(pubKey);
+		byte[] b1 = data.toString().getBytes();
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
+		ds1.send(dp1);		
+
 		DatagramSocket ds = new DatagramSocket(8000);
 		while(true) {
 			byte[] b = new byte[1024];
@@ -63,5 +75,18 @@ public class AuctionManager implements Runnable {
 			writer.append(jsonObject.toString() + "\n");
 			writer.close();
 		}
+	}
+	
+	static void generateKeys() throws NoSuchAlgorithmException {
+		KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+		kpg.initialize(2048);
+		KeyPair kp = kpg.generateKeyPair();
+		Key pub = kp.getPublic();
+		Key pvt = kp.getPrivate();		
+		//String outFile = "private";
+		pubKey = encoder.encodeToString(pub.getEncoded());
+		//Writer out = new FileWriter(outFile + ".key");
+		//out.write(encoder.encodeToString(pvt.getEncoded()));
+		//out.close();
 	}
 }

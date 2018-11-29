@@ -51,16 +51,12 @@ import java.io.OutputStreamWriter;
  * para o repositório.
  */
 
-public class AuctionClient implements Runnable {
+public class AuctionClient {
 
 	static Scanner sc = new Scanner(System.in);
 	static String line = "";
 	static List<JSONObject> test = new ArrayList<JSONObject>();
 	static String clientid;
-
-	public void run() {
-		
-	}
 	
 	public static void executeCommand(int action) {
 		try {
