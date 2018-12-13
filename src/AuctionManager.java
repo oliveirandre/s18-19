@@ -2,36 +2,65 @@ import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
 import org.json.JSONObject;
 import java.util.Base64;
+import java.util.List;
+import java.util.ArrayList;
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+
+class Client {
+
+	String name;
+	int id;
+	PublicKey pub;
+
+	public Client(String name, int id, PublicKey pub) {
+		this.name = name;
+		this.id = id;
+		this.pub = pub;
+	}
+
+}
 
 public class AuctionManager {
 	
-	public static int client = 0;
-	private static String pubKey;
-	private static Key prv;
+	private static int counter = 0;
+	static List<Client> clients = new ArrayList<Client>();
+	private static Key publicKey = null;
+	private static Key privateKey = null;
+	private static SecretKey secKey = null;
+	private static PublicKey repositoryPublicKey = null;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
-	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
+	public static void main(String[] args) throws IOException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+		//Generate public and private keys
 		generateKeys();	
 		
-		//KEY EXCHANGE BETWEEN SERVERS
-		DatagramSocket ds1 = new DatagramSocket();
+		//Send public key to repository
+		DatagramSocket ds = new DatagramSocket(8000);
 		JSONObject data = new JSONObject();
 		InetAddress ia = InetAddress.getLocalHost();
 		data.put("action", "serverconnection");
-		data.put("pubkey", pubKey);
-		System.out.println(pubKey);
+		String encodedKey = Base64.getEncoder().encodeToString(publicKey.getEncoded());
+		data.put("manpubkey", encodedKey);
 		byte[] b1 = data.toString().getBytes();
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
-		ds1.send(dp1);		
+		ds.send(dp1);		
 
-		DatagramSocket ds = new DatagramSocket(8000);
 		while(true) {
 			byte[] b = new byte[1024];
 			DatagramPacket dp = new DatagramPacket(b, b.length);
@@ -42,25 +71,39 @@ public class AuctionManager {
 		}
 	}
 
-	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws IOException {
-		//ESTABLISHES THE ID OF A NEW CLIENT
+	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws IOException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException {
+		//Receive repository's public key
+		if(jsonObject.get("action").equals("serverconnection")) {
+			repositoryPublicKey = getKey(jsonObject.getString("reppubkey"));
+			System.out.println("Servers are connected successfuly");
+		}
+		
+		//Client connection
 		if(jsonObject.get("action").equals("newclient")) {
-			System.out.println("New client connecting!");
-			client++;
-			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + client + ".txt"));
-			writer.write("Client connected sucessfuly!\n");
-			writer.close();
-			byte[] b1 = String.valueOf(client).getBytes();
+			//Add new client to ArrayList
+			counter++;
+			PublicKey clientKey = getKey(jsonObject.getString("clientkey"));
+			Client c = new Client(jsonObject.getString("name"), counter, clientKey);
+			clients.add(c);
+
+			System.out.println(jsonObject.getString("name") + " connected successfuly");
+
+			//Give client its new id and manager's public key
+			JSONObject data = new JSONObject();
 			InetAddress ia = InetAddress.getLocalHost();
+			data.put("clientid", counter);
+			String manpubkey = encoder.encodeToString(publicKey.getEncoded());
+			data.put("manpubkey", manpubkey);
+			byte[] b1 = data.toString().getBytes();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
 			ds.send(dp1);
 		}
 		
-		//CREATE A NEW AUCTION
+		//Create a new auction
 		if(jsonObject.get("action").equals("create")) {
-			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getString("creatorid") + ".txt", true));
-			writer.append(jsonObject.toString() + "\n");
-			writer.close();
+			//Missing: process this new auction before sending to repository
+
+			//Send data to repository
 			System.out.println(jsonObject.toString());
 			DatagramSocket ds1 = new DatagramSocket();
 			InetAddress ia = InetAddress.getLocalHost();
@@ -69,24 +112,62 @@ public class AuctionManager {
 			ds1.send(dp1);
 		}
 		
-		//NEW BID
+		//New bid
 		if(jsonObject.get("action").equals("bid")) {
-			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getString("creatorid") + ".txt", true));
+			//Missing: signature for receipt
+
+			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getInt("creatorid") + ".txt", true));
 			writer.append(jsonObject.toString() + "\n");
 			writer.close();
 		}
 	}
 	
 	static void generateKeys() throws NoSuchAlgorithmException {
+		//AES - Symmetric Key		
+		KeyGenerator generator = KeyGenerator.getInstance("AES");
+		generator.init(128); // The AES key size in number of bits
+		secKey = generator.generateKey();
+
+		//RSA - Public and Private Keys
 		KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
 		kpg.initialize(2048);
 		KeyPair kp = kpg.generateKeyPair();
-		Key pub = kp.getPublic();
-		Key pvt = kp.getPrivate();		
-		//String outFile = "private";
-		pubKey = encoder.encodeToString(pub.getEncoded());
-		//Writer out = new FileWriter(outFile + ".key");
-		//out.write(encoder.encodeToString(pvt.getEncoded()));
-		//out.close();
+		publicKey = kp.getPublic();
+		privateKey = kp.getPrivate();
+	}
+	
+	//Cipher with symmetric key
+	static byte[] cipherAES(byte[] in) throws IllegalBlockSizeException, BadPaddingException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException {
+		Cipher aesCipher = Cipher.getInstance("AES");
+		aesCipher.init(Cipher.ENCRYPT_MODE, secKey);
+		return aesCipher.doFinal(in);
+	}
+	
+	//Cipher with public key
+	static byte[] cipherRSA(byte[] in, Key key) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+		Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-1AndMGF1Padding");
+		cipher.init(Cipher.ENCRYPT_MODE, key);
+		return cipher.doFinal(in);
+	}
+	
+	//Decipher with private key
+	static byte[] decipherRSA(byte[] in, Key key) throws IllegalBlockSizeException, BadPaddingException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException {
+		Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA1AndMGF1Padding");   
+	    cipher.init(Cipher.DECRYPT_MODE, key);  
+	    return cipher.doFinal(in);
+	}
+	
+	//Method to generate key given byte array
+	static PublicKey getKey(String key) {
+	    try{
+	        byte[] byteKey = decoder.decode(key.getBytes());
+	        X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+	        KeyFactory kf = KeyFactory.getInstance("RSA");
+	        return kf.generatePublic(X509publicKey);
+	    }
+	    catch(Exception e){
+	        e.printStackTrace();
+	    }
+	    return null;
 	}
 }
