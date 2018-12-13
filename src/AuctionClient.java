@@ -322,18 +322,20 @@ public class AuctionClient {
 		}	
 		String hash = "";
 		hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"));
-		while(hash.substring(0, difficulty).equals(comparison)) {		
+		while((hash.substring(0, difficulty).equals(comparison))) {		
 			hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"));
 		}
+		System.out.println(hash);
 		byte[] cipheredhash = cipherAES(hash.getBytes());
 		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), repositoryPublicKey);
 		JSONObject hashjson = new JSONObject();
 		hashjson.put("action", "bid");
-		hashjson.put("hash", cipheredhash.toString());
-		hashjson.put("key", cipheredkey.toString());
+		hashjson.put("hash", encoder.encodeToString(cipheredhash));
+		hashjson.put("key", encoder.encodeToString(cipheredkey));
+		System.out.println(hashjson.toString());
 		byte[] send = hashjson.toString().getBytes();
 		InetAddress ia3 = InetAddress.getLocalHost();
-		DatagramPacket dp3 = new DatagramPacket(send, send.length, ia1, 9000);
+		DatagramPacket dp3 = new DatagramPacket(send, send.length, ia3, 9000);
 		ds.send(dp3);
 
 		//finally

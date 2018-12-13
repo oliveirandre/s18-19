@@ -317,12 +317,13 @@ public class AuctionRepository {
 			byte[] resp = new byte[1024];
 			DatagramPacket respp = new DatagramPacket(resp, resp.length);
 			ds.receive(respp);
-			/*String r = new String(respp.getData());
+			String r = new String(respp.getData());
 			JSONObject jo = new JSONObject(r);
-			byte[] decipheredkey = decipherRSA(jo.getString("key").getBytes(), privateKey);
+			byte[] decipheredkey = decipherRSA(decoder.decode(jo.getString("key")), privateKey);
 			SecretKey originalKey = new SecretKeySpec(decipheredkey , 0, decipheredkey.length, "AES");
-			byte[] decipheredHash = decipherAES(jo.getString("hash").getBytes(), originalKey);
-			//faltam coisas */
+			byte[] decipheredHash = decipherAES(decoder.decode(jo.getString("hash")), originalKey);
+			System.out.println(encoder.encodeToString(decipheredHash));
+			//faltam coisas 
 
 			//resposta
 			JSONObject obj = new JSONObject();
@@ -413,7 +414,7 @@ public class AuctionRepository {
 	static byte[] decipherAES(byte[] in, SecretKey key) {
 		try {
 			Cipher aesCipher = Cipher.getInstance("AES");
-			aesCipher.init(Cipher.ENCRYPT_MODE, key);
+			aesCipher.init(Cipher.DECRYPT_MODE, key);
 			return aesCipher.doFinal(in);
 		}
 		catch(Exception e) {
