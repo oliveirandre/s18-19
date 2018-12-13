@@ -313,16 +313,19 @@ public class AuctionRepository {
 			DatagramPacket dp3 = new DatagramPacket(criptop, criptop.length, ia1, dp.getPort());
 			ds.send(dp3);
 
-			//Criptopuzzle received
+			//Criptopuzzle received - chave e hash são recebidas bem
 			byte[] resp = new byte[1024];
 			DatagramPacket respp = new DatagramPacket(resp, resp.length);
 			ds.receive(respp);
 			String r = new String(respp.getData());
 			JSONObject jo = new JSONObject(r);
 			byte[] decipheredkey = decipherRSA(decoder.decode(jo.getString("key")), privateKey);
-			SecretKey originalKey = new SecretKeySpec(decipheredkey , 0, decipheredkey.length, "AES");
+			//System.out.println(encoder.encodeToString(decipheredkey));
+			SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
+			//System.out.println(encoder.encodeToString(originalKey.getEncoded()));
 			byte[] decipheredHash = decipherAES(decoder.decode(jo.getString("hash")), originalKey);
-			System.out.println(encoder.encodeToString(decipheredHash));
+			//System.out.println(new String(decipheredHash));
+			
 			//faltam coisas 
 
 			//resposta

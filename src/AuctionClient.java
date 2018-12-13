@@ -332,7 +332,8 @@ public class AuctionClient {
 		hashjson.put("action", "bid");
 		hashjson.put("hash", encoder.encodeToString(cipheredhash));
 		hashjson.put("key", encoder.encodeToString(cipheredkey));
-		System.out.println(hashjson.toString());
+		//System.out.println(encoder.encodeToString(secKey.getEncoded()));
+		//System.out.println(hashjson.toString());
 		byte[] send = hashjson.toString().getBytes();
 		InetAddress ia3 = InetAddress.getLocalHost();
 		DatagramPacket dp3 = new DatagramPacket(send, send.length, ia3, 9000);
