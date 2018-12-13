@@ -320,10 +320,13 @@ public class AuctionClient {
 		for(int i = 0; i < difficulty; i++) {
 			comparison += "0";
 		}	
+		System.out.println(comparison);
 		String hash = "";
-		hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"));
-		while((hash.substring(0, difficulty).equals(comparison))) {		
-			hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"));
+		int var = 0;
+		hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"), var); 
+		while(!(hash.substring(0, difficulty).equals(comparison))) {		
+			var++;
+			hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"), var);
 		}
 		System.out.println(hash);
 		byte[] cipheredhash = cipherAES(hash.getBytes());
@@ -449,10 +452,10 @@ public class AuctionClient {
 	}
 
 	//Calculate hash
-	public static String calculateHash(String s1, String s2) {
+	public static String calculateHash(String s1, String s2, int in) {
 		try {
 			MessageDigest md = MessageDigest.getInstance("SHA-256");
-			String input = s1 + s2;
+			String input = s1 + s2 + in;
 			md.update(input.getBytes());
 			byte[] digest = md.digest();
 			StringBuffer sb = new StringBuffer();
