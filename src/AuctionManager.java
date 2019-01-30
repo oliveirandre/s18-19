@@ -11,6 +11,7 @@ import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PublicKey;
@@ -32,7 +33,10 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Enumeration;
+import java.security.Principal;
 
 class Client {
 
@@ -60,11 +64,27 @@ public class AuctionManager {
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
-	public static void main(String[] args) throws IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+	public static void main(String[] args) throws KeyStoreException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		//readCert();
 		//readKey();
 		//idk();
 		
+		KeyStore p12 = KeyStore.getInstance("pkcs12");
+        p12.load(new FileInputStream("certs/man.p12"), "".toCharArray());
+        Enumeration e = p12.aliases();
+        while (e.hasMoreElements()) {
+            String alias = (String) e.nextElement();
+            X509Certificate c = (X509Certificate) p12.getCertificate(alias);
+            Principal subject = c.getSubjectDN();
+            String subjectArray[] = subject.toString().split(",");
+            for (String s : subjectArray) {
+                String[] str = s.trim().split("=");
+                String key = str[0];
+                String value = str[1];
+                System.out.println(key + " - " + value);
+            }
+        }
+
 		//Generate public and private keys
 		generateKeys();	
 		
