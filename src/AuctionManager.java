@@ -18,6 +18,8 @@ import java.security.PublicKey;
 import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.SignatureException;
+import java.security.UnrecoverableEntryException;
+import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -37,6 +39,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Enumeration;
 import java.security.Principal;
+import java.security.KeyStore.PrivateKeyEntry;
 
 class Client {
 
@@ -64,14 +67,15 @@ public class AuctionManager {
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
-	public static void main(String[] args) throws KeyStoreException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+	public static void main(String[] args) throws KeyStoreException, UnrecoverableKeyException, UnrecoverableEntryException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		//readCert();
 		//readKey();
 		//idk();
 		
 		KeyStore p12 = KeyStore.getInstance("pkcs12");
         p12.load(new FileInputStream("certs/man.p12"), "".toCharArray());
-        Enumeration e = p12.aliases();
+		Enumeration e = p12.aliases();
+		System.out.println(e);
         while (e.hasMoreElements()) {
             String alias = (String) e.nextElement();
             X509Certificate c = (X509Certificate) p12.getCertificate(alias);
@@ -83,7 +87,13 @@ public class AuctionManager {
                 String value = str[1];
                 System.out.println(key + " - " + value);
             }
-        }
+		}
+		
+		char[] password="".toCharArray();
+		String alias = "1";
+		PrivateKey privateKey1 = (PrivateKey) p12.getKey(alias, password);
+		PrivateKeyEntry privateKeyEntry = (PrivateKeyEntry) p12.getEntry(alias, new KeyStore.PasswordProtection(password));
+		System.out.println(encoder.encodeToString(privateKey1.getEncoded()));
 
 		//Generate public and private keys
 		generateKeys();	
