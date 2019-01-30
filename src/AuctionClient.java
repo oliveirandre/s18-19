@@ -1,7 +1,6 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.Socket;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -9,30 +8,20 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
-import java.util.List;
 import java.util.Scanner;
 import java.security.MessageDigest;
-import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
-import com.sun.javafx.css.CalculatedValue;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.security.InvalidKeyException;
 
 /*
@@ -68,7 +57,7 @@ import java.security.InvalidKeyException;
  * -> As bids são mandadas para o repositório, depois é validado pelo manager, e depois volta
  * para o repositório.
  * 
- * Cifração e decifração com chaves públicas e privadas.
+ * Cifragem e decifragem com chaves públicas e privadas.
  * MAC
  * SHA
  * Cartão de Cidadão
@@ -80,14 +69,16 @@ import java.security.InvalidKeyException;
 
 public class AuctionClient {
 
-	static Scanner sc = new Scanner(System.in);
-	static String line = "";
-	static int clientid;
+	private static Scanner sc = new Scanner(System.in);
+	private static String line = "";
+	private static int clientid;
+	private static String name;
 	private static Key publicKey;
 	private static Key privateKey;
 	private static SecretKey secKey = null;
 	private static Key managerPublicKey = null;
 	private static Key repositoryPublicKey = null;
+	private static CC cc;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
@@ -108,6 +99,12 @@ public class AuctionClient {
 			else if(action == 5) {
 				displayBids();
 			}
+			else if(action == 6) {
+				bidsByClient();
+			}
+			else if(action == 7) {
+				checkOutcome();
+			}
 			else if (action == 0) {
 				System.exit(0);
 			}
@@ -118,12 +115,21 @@ public class AuctionClient {
 	
 	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
 		//Generate public and private keys
+		/*
+		try {
+			cc = new CC();
+		} catch (Exception e) {
+			System.err.print(e);
+			return;
+		}
+		*/
 		generateKeys();
+		//Random r = new Random();
 
 		//Set name for this client
 		System.out.println("Welcome to our Auction Application!");
 		System.out.print("Please enter your name: ");
-		String name = sc.next();
+		name = sc.next();
 
 		//Connection to the servers
 		DatagramSocket ds = new DatagramSocket();
@@ -155,7 +161,7 @@ public class AuctionClient {
 		String response1 = new String(dp2.getData());
 		JSONObject jsonObject2 = new JSONObject(response1);
 		repositoryPublicKey = getKey(jsonObject2.getString("reppubkey"));
-		
+
 		//Create file for this client
 		File f = new File("Receipts/client" + response + ".txt");
 
@@ -181,21 +187,18 @@ public class AuctionClient {
 		System.out.println("2 - Blind auction");
 		System.out.print("> ");
 		int type = sc.nextInt();
-		if(type == 1)
+		if(type == 1) {
 			data.put("type", "ascending");
+			data.put("creatorid", name);
+		}
 		else if(type == 2) {
-			System.out.println("\nDo you want the bidders to be public or private?");
-			System.out.println("1 - Public");
-			System.out.println("2 - Private");
-			System.out.print("> ");
-			int identity = sc.nextInt();
-			if(identity == 1)
-				data.put("identity", "public");
-			else if(identity == 2)
-				data.put("identity", "private");
-			else
-				return;
 			data.put("type", "blind");
+			byte[] bytes = name.getBytes();
+			System.out.println(bytes);
+			byte[] cipheredcreator = cipherAES(bytes);
+			byte[] cipheredkey = cipherRSA(secKey.getEncoded(), repositoryPublicKey);
+			data.put("creatorid", encoder.encodeToString(cipheredcreator));
+			data.put("key", encoder.encodeToString(cipheredkey));
 		}
 		else
 			return;
@@ -205,7 +208,6 @@ public class AuctionClient {
 		data.put("timestamp", timestamp);
 		data.put("description", description);
 		data.put("action", "create");
-		data.put("creatorid", clientid);
 		JSONArray arr = new JSONArray();
 		arr.put(0);
 		data.put("bid", arr);
@@ -240,7 +242,7 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		data.put("action", "listothers");
-		data.put("creatorid", clientid);
+		data.put("creatorid", name);
 		InetAddress ia = InetAddress.getLocalHost();
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
@@ -260,7 +262,7 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		data.put("action", "listmine");
-		data.put("creatorid", clientid);
+		data.put("creatorid", name);
 		InetAddress ia = InetAddress.getLocalHost();
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
@@ -285,7 +287,7 @@ public class AuctionClient {
 		int choice = sc.nextInt();
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
-		data.put("creatorid", clientid);
+		data.put("creatorid", name);
 		data.put("action", "terminate");
 		data.put("position", choice);
 		InetAddress ia = InetAddress.getLocalHost();
@@ -303,7 +305,7 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject bid = new JSONObject();
 		bid.put("action", "bid");
-		bid.put("bidder", clientid);
+		bid.put("bidder", name);
 		byte[] bidb = bid.toString().getBytes();
 		InetAddress ia1 = InetAddress.getLocalHost();
 		DatagramPacket dp2 = new DatagramPacket(bidb, bidb.length, ia1, 9000);
@@ -313,6 +315,7 @@ public class AuctionClient {
 		byte[] resp = new byte[1024];
 		DatagramPacket respp = new DatagramPacket(resp, resp.length);
 		ds.receive(respp);
+		System.out.println("recebi cryptopuzzle");
 		String r = new String(respp.getData());
 		JSONObject jo = new JSONObject(r);
 		int difficulty = jo.getInt("difficulty");
@@ -320,7 +323,6 @@ public class AuctionClient {
 		for(int i = 0; i < difficulty; i++) {
 			comparison += "0";
 		}	
-		System.out.println(comparison);
 		String hash = "";
 		int var = 0;
 		hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"), var); 
@@ -328,7 +330,6 @@ public class AuctionClient {
 			var++;
 			hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"), var);
 		}
-		System.out.println(hash);
 		byte[] cipheredhash = cipherAES(hash.getBytes());
 		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), repositoryPublicKey);
 		JSONObject hashjson = new JSONObject();
@@ -340,6 +341,7 @@ public class AuctionClient {
 		byte[] send = hashjson.toString().getBytes();
 		InetAddress ia3 = InetAddress.getLocalHost();
 		DatagramPacket dp3 = new DatagramPacket(send, send.length, ia3, 9000);
+		System.out.println("resolvi cryptopuzzle");
 		ds.send(dp3);
 
 		//finally
@@ -356,7 +358,7 @@ public class AuctionClient {
 		System.out.print("> ");
 		int value = sc.nextInt();
 		Date timestamp = new Date();
-		data1.put("creatorid", clientid);
+		data1.put("creatorid", name);
 		data1.put("timestamp", timestamp);
 		data1.put("action", "bidcont");
 		data1.put("auction", choice);
@@ -389,7 +391,7 @@ public class AuctionClient {
 		int choice = sc.nextInt();
 		Date timestamp = new Date();
 		data.put("timestamp", timestamp);
-		data.put("creatorid", clientid);
+		data.put("creatorid", name);
 		data.put("action", "showbids");
 		data.put("auction", choice);
 		InetAddress ia = InetAddress.getLocalHost();
@@ -402,7 +404,86 @@ public class AuctionClient {
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
-		System.out.println(response);
+		JSONObject jsonObject = new JSONObject(response);
+		if(jsonObject.get("bids").equals("none"))
+			System.out.println("Can't show bids of a blind auction!");
+		else {
+			System.out.println(jsonObject.get("bids"));
+		}
+	}
+
+	public static void checkOutcome() throws IOException {
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		data.put("creatorid", name);
+		data.put("action", "checkoutcome");
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		JSONObject jsonObject = new JSONObject(response);
+		System.out.println(jsonObject.get("options"));
+
+		JSONObject data1 = new JSONObject();
+		System.out.println("\nWhich auction do you wish to check?");
+		System.out.print("> ");
+		int choice = sc.nextInt();
+		data1.put("creatorid", name);
+		data1.put("action", "checkcont");
+		data1.put("auction", choice);
+
+		byte[] b2 = data1.toString().getBytes();
+		DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia, 9000);
+		ds.send(dp2);
+
+		//Response from repository
+		byte[] b3 = new byte[1024];
+		DatagramPacket dp3 = new DatagramPacket(b3, b3.length);
+		ds.receive(dp3);
+		String line = new String(dp3.getData());
+		JSONObject jo = new JSONObject(line);
+		System.out.println(jo.get("resp"));
+	}
+
+	public static void bidsByClient() throws IOException {
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject data = new JSONObject();
+		data.put("creatorid", name);
+		data.put("action", "bidsbyclient");
+		InetAddress ia = InetAddress.getLocalHost();
+		byte[] b = data.toString().getBytes();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp);
+
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		JSONObject jsonObject = new JSONObject(response);
+		System.out.println(jsonObject.get("options"));
+
+		JSONObject data1 = new JSONObject();
+		System.out.println("\nWhich client do you wish to check?");
+		System.out.print("> ");
+		int choice = sc.nextInt();
+		data1.put("creatorid", name);
+		data1.put("action", "clientcont");
+		data1.put("client", choice);
+		byte[] b2 = data1.toString().getBytes();
+		DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia, 9000);
+		ds.send(dp2);
+
+		byte[] b3 = new byte[1024];
+		DatagramPacket dp3 = new DatagramPacket(b3, b3.length);
+		ds.receive(dp3);
+		String line = new String(dp3.getData());
+		JSONObject jo = new JSONObject(line);
+		System.out.println(jo.get("bids"));
 	}
 
 	public static int menu() {

@@ -2,13 +2,23 @@ import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.KeyStore;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.PublicKey;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.SignatureException;
+import java.security.cert.CertificateFactory;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import org.json.JSONObject;
 import java.util.Base64;
@@ -20,6 +30,9 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
+import java.security.cert.CertificateFactory;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 
 class Client {
 
@@ -38,18 +51,46 @@ class Client {
 public class AuctionManager {
 	
 	private static int counter = 0;
+	private static int instcounter = 0;
 	static List<Client> clients = new ArrayList<Client>();
-	private static Key publicKey = null;
-	private static Key privateKey = null;
+	private static PublicKey publicKey = null;
+	private static PrivateKey privateKey = null;
 	private static SecretKey secKey = null;
 	private static PublicKey repositoryPublicKey = null;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
-	public static void main(String[] args) throws IOException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+	public static void main(String[] args) throws IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+		//readCert();
+		//readKey();
+		//idk();
+		
 		//Generate public and private keys
 		generateKeys();	
 		
+		/*Signature dsa = Signature.getInstance("SHA1withDSA", "SUN");
+		dsa.initSign(privateKey);
+		FileInputStream fis = new FileInputStream(args[0]);
+		BufferedInputStream bufin = new BufferedInputStream(fis);
+		byte[] buffer = new byte[1024];
+		int len;
+		while ((len = bufin.read(buffer)) >= 0) {
+			dsa.update(buffer, 0, len);
+		};
+		bufin.close();
+		byte[] realSig = dsa.sign();
+
+		/* save the signature in a file */
+		/*FileOutputStream sigfos = new FileOutputStream("sig");
+		sigfos.write(realSig);
+		sigfos.close();
+
+		/* save the public key in a file */
+		/*byte[] key = publicKey.getEncoded();
+		FileOutputStream keyfos = new FileOutputStream("manepk");
+		keyfos.write(key);
+		keyfos.close();*/
+
 		//Send public key to repository
 		DatagramSocket ds = new DatagramSocket(8000);
 		JSONObject data = new JSONObject();
@@ -68,6 +109,13 @@ public class AuctionManager {
 			String line = new String(dp.getData());
 			JSONObject jsonObject = new JSONObject(line);
 			readCommand(jsonObject, dp, ds);
+			instcounter++;
+			
+			//Renew Keys
+			if(instcounter == 10) {
+				generateKeys();
+				instcounter = 0;
+			}
 		}
 	}
 
@@ -121,7 +169,7 @@ public class AuctionManager {
 			writer.close();
 		}
 	}
-	
+
 	static void generateKeys() throws NoSuchAlgorithmException {
 		//AES - Symmetric Key		
 		KeyGenerator generator = KeyGenerator.getInstance("AES");
@@ -134,6 +182,8 @@ public class AuctionManager {
 		KeyPair kp = kpg.generateKeyPair();
 		publicKey = kp.getPublic();
 		privateKey = kp.getPrivate();
+
+		
 	}
 	
 	//Cipher with symmetric key
@@ -169,5 +219,41 @@ public class AuctionManager {
 	        e.printStackTrace();
 	    }
 	    return null;
+	}
+
+	static Certificate readCert() {
+		try {
+			CertificateFactory fact = CertificateFactory.getInstance("X.509");
+			InputStream is = Files.newInputStream(Paths.get("certs/man.crt"));
+			X509Certificate crt = (X509Certificate) fact.generateCertificate(is);
+			return crt;
+		} catch(Exception e) { 
+			System.out.println("Error while reading certificate: " + e);
+			return null;
+		}
+	}
+
+	static PrivateKey readKey() {
+		try {
+			Path p = Paths.get("certs/man.pem");
+			byte[] bytes = Files.readAllBytes(p);
+			KeyFactory kf = KeyFactory.getInstance("RSA");
+			PKCS8EncodedKeySpec ks = new PKCS8EncodedKeySpec(bytes);
+			return kf.generatePrivate(ks);
+		} catch(Exception e) {
+			System.out.println("Error while reading key: " + e);
+			return null;
+		}
+	}
+
+	static void idk() {
+		try {
+			KeyStore ks = KeyStore.getInstance("PKCS12");
+			ks.load(new FileInputStream("certs/man.p12"), null);
+			Key pvtkey = ks.getKey("private", null);
+			System.out.println(pvtkey.getEncoded());
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
 	}
 }

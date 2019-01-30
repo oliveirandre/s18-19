@@ -25,6 +25,8 @@ import javax.crypto.SecretKey;
 import javax.crypto.KeyGenerator;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.sun.javafx.util.TempState;
+
 class ClientR {
 
 	String name;
@@ -47,9 +49,9 @@ class Block {
 	String timestamp;
 	String hash;
 	int nonce;
-	int bidder;
+	String bidder;
 	
-	public Block(int index, String data, String timestamp, String previousHash, int bidder) throws NoSuchAlgorithmException {
+	public Block(int index, String data, String timestamp, String previousHash, String bidder) throws NoSuchAlgorithmException {
 		this.index = index;
 		this.data = data;
 		this.timestamp = timestamp;
@@ -89,21 +91,23 @@ class Blockchain {
 	List<Block> chain = new ArrayList<Block>();
 	int difficulty;
 	int id;
-	int creator;
+	String creator;
 	String description;
 	int i = 0;
+	String type;
 	
-	public Blockchain(int id, String description, int creator) throws NoSuchAlgorithmException {
+	public Blockchain(int id, String description, String creator, String type) throws NoSuchAlgorithmException {
 		this.chain.add(createGenesis());
 		this.difficulty = 4;
 		this.id = id;
 		this.description = description;
 		this.creator = creator;
+		this.type = type;
 	}
 	
 	public Block createGenesis() throws NoSuchAlgorithmException {
 		Date timestamp = new Date();
-		return new Block(i, "0", timestamp.toString(), "0", creator);
+		return new Block(i, "0", timestamp.toString(), "0", "");
 	}
 	
 	public Block getLatestBlock() {
@@ -142,6 +146,7 @@ class Blockchain {
 public class AuctionRepository {
 
 	private static int counter = 0;
+	private static int instcounter = 0;
 	static List<ClientR> clients = new ArrayList<ClientR>();
 	static int blockchainid = 0;
 	static List<Blockchain> auctions = new ArrayList<Blockchain>();
@@ -165,6 +170,12 @@ public class AuctionRepository {
 			String line = new String(dp.getData());
 			JSONObject jsonObject = new JSONObject(line);
 			readCommand(jsonObject, dp, ds);
+			/*instcounter++;
+			Renew Keys
+			if(instcounter == 10) {
+				generateKeys();
+				instcounter = 0;
+			}*/
 		}
 	}
 	
@@ -207,30 +218,53 @@ public class AuctionRepository {
 		//New auction
 		if(jsonObject.get("action").equals("create")) { 
 			//Data sent by the manager after auction being processed
-			Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), jsonObject.getInt("creatorid"));
-			blockchainid++;
-			auctions.add(blockChain);
-			System.out.println("Genesis Block Hash of Blockchain " + blockChain.id + ": \n" + blockChain.getLatestBlock().hash);
+			if(jsonObject.get("type").equals("ascending")) {
+				Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), jsonObject.getString("creatorid"), jsonObject.getString("type"));
+				blockchainid++;
+				auctions.add(blockChain);
+				System.out.println("Genesis Block Hash of Blockchain " + blockChain.id + ": \n" + blockChain.getLatestBlock().hash);
+			}
+			if(jsonObject.get("type").equals("blind")) {
+				byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key")), privateKey);
+				SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
+				byte[] decipheredclient = decipherAES(decoder.decode(jsonObject.getString("creatorid")), originalKey);
+				System.out.println(new String(decipheredclient));
+
+				Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), new String(decipheredclient), jsonObject.getString("type"));
+				blockchainid++;
+				auctions.add(blockChain);
+				System.out.println("Genesis Block Hash of Blockchain " + blockChain.id + ": \n" + blockChain.getLatestBlock().hash);
+			}
 		}
 		
 		//List all auctions
 		else if(jsonObject.get("action").equals("list")) {
-			String list = "";
+			String list = "\n";
 			String s = "";
 			String bidder = "";
 			for(int i = 0; i < auctions.size(); i++) {
 				bidder = "";
-				for(int j = 0; j < clients.size(); j++) {
-					if(auctions.get(i).creator == clients.get(j).id)
-						s = clients.get(j).name;
+				if(auctions.get(i).type.equals("blind")) {
+					list += "Open - Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Type: Blind Auction\n";
 				}
-				for(int k = 0; k < clients.size(); k++) {
-					if(auctions.get(i).getLatestBlock().bidder == clients.get(k).id) {
-						bidder = " by ";
-						bidder += clients.get(k).name;
+				else {
+					for(int j = 0; j < clients.size(); j++) {
+						if(auctions.get(i).creator.equals(clients.get(j).name))
+							s = clients.get(j).name;
 					}
+					for(int k = 0; k < clients.size(); k++) {
+						if(auctions.get(i).getLatestBlock().bidder.equals(clients.get(k).name)) {
+							bidder = " by ";
+							bidder += clients.get(k).name;
+						}
+						else
+							bidder = "";
+					}
+					list += "Open - Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + s + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + bidder + "\n";
 				}
-				list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + s + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + bidder + "\n";
+			}
+			for(int n = 0; n < terminated.size(); n++) {
+				list += "Terminated - Auction number: " + terminated.get(n).id + " | Description: " + terminated.get(n).description + " | Creator: " + terminated.get(n).creator + "\n";
 			}
 			byte[] b1 = list.getBytes();
 			InetAddress ia = InetAddress.getLocalHost();
@@ -245,18 +279,28 @@ public class AuctionRepository {
 			String bidder = "";
 			for(int i = 0; i < auctions.size(); i++) {
 				bidder = "";
-				for(int j = 0; j < clients.size(); j++) {
-					if(auctions.get(i).creator == clients.get(j).id)
-						s = clients.get(j).name;
-				}
-				for(int k = 0; k < clients.size(); k++) {
-					if(auctions.get(i).getLatestBlock().bidder == clients.get(k).id) {
-						bidder = " by ";
-						bidder += clients.get(k).name;
+				if(auctions.get(i).type.equals("blind")) {
+					for(int j = 0; j < clients.size(); j++) {
+						if(!auctions.get(i).creator.equals(jsonObject.getString("creatorid")))
+							list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Type: Blind Auction\n";
 					}
 				}
-				if(auctions.get(i).creator != jsonObject.getInt("creatorid")) {
-					list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + s + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + bidder + "\n";
+				else {
+					for(int j = 0; j < clients.size(); j++) {
+						if(auctions.get(i).creator.equals(clients.get(j).name))
+							s = clients.get(j).name;
+					}
+					for(int k = 0; k < clients.size(); k++) {
+						if(auctions.get(i).getLatestBlock().bidder.equals(clients.get(k).name)) {
+							bidder = " by ";
+							bidder += clients.get(k).name;
+						}
+						else
+							bidder = "";
+					}
+					if(!auctions.get(i).creator.equals(jsonObject.getString("creatorid"))) {
+						list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + s + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + bidder + "\n";
+					}
 				}
 			}
 			byte[] b1 = list.getBytes();
@@ -272,18 +316,23 @@ public class AuctionRepository {
 			String bidder = "";
 			for(int i = 0; i < auctions.size(); i++) {
 				bidder = "";
-				for(int j = 0; j < clients.size(); j++) {
-					if(auctions.get(i).creator == clients.get(j).id)
-						s = clients.get(j).name;
+				if(auctions.get(i).type.equals("blind")) {
+					list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Type: Blind Auction\n";
 				}
-				for(int k = 0; k < clients.size(); k++) {
-					if(auctions.get(i).getLatestBlock().bidder == clients.get(k).id) {
-						bidder = " by ";
-						bidder += clients.get(k).name;
+				else {
+					for(int j = 0; j < clients.size(); j++) {
+						if(auctions.get(i).creator.equals(clients.get(j).name))
+							s = clients.get(j).name;
 					}
-				}
-				if(auctions.get(i).creator == jsonObject.getInt("creatorid")) {
-					list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + s + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + bidder + "\n";
+					for(int k = 0; k < clients.size(); k++) {
+						if(auctions.get(i).getLatestBlock().bidder.equals(clients.get(k).name)) {
+							bidder = " by ";
+							bidder += clients.get(k).name;
+						}
+					}
+					if(auctions.get(i).creator.equals(jsonObject.getString("creatorid"))) {
+						list += "Auction number: " + auctions.get(i).id + " | Description: " + auctions.get(i).description + " | Creator: " + s + " | Current highest bid: " + auctions.get(i).getLatestBlock().data + bidder + "\n";
+					}
 				}
 			}
 			byte[] b1 = list.getBytes();
@@ -301,7 +350,7 @@ public class AuctionRepository {
 			String bidder = "";
 			String key = "";
 			for(int i = 0; i < clients.size(); i++) {
-				if(jsonObject.getInt("bidder") == clients.get(i).id) {
+				if(jsonObject.get("bidder").equals(clients.get(i).name)) {
 					bidder = clients.get(i).name;
 					key = encoder.encodeToString(clients.get(i).pub.getEncoded());
 				}
@@ -312,11 +361,13 @@ public class AuctionRepository {
 			InetAddress ia1 = InetAddress.getLocalHost();
 			DatagramPacket dp3 = new DatagramPacket(criptop, criptop.length, ia1, dp.getPort());
 			ds.send(dp3);
+			System.out.println("enviei cryptopuzzle");
 
 			//Criptopuzzle received - chave e hash são recebidas bem
 			byte[] resp = new byte[1024];
 			DatagramPacket respp = new DatagramPacket(resp, resp.length);
 			ds.receive(respp);
+			System.out.println("recebi cryptopuzzle resolvido");
 			String r = new String(respp.getData());
 			JSONObject jo = new JSONObject(r);
 			byte[] decipheredkey = decipherRSA(decoder.decode(jo.getString("key")), privateKey);
@@ -343,16 +394,10 @@ public class AuctionRepository {
 			int index = 0;
 			for(int i = 0; i < auctions.size(); i++) {
 				if(i == auction) {
-					if(Integer.parseInt(auctions.get(i).getLatestBlock().data) >= jsonObject.getInt("value")) {
-						byte[] b1 = "Value inserted is inferior to the highest bid!".getBytes();
-						InetAddress ia = InetAddress.getLocalHost();
-						DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
-						ds.send(dp1);
-					}
-					else {
+					if(auctions.get(i).type.equals("blind")) {
 						index = auctions.get(i).getLatestBlock().index;
 						index++;
-						auctions.get(i).addBlock(new Block(index, jsonObject.get("value").toString(), jsonObject.getString("timestamp"), "", jsonObject.getInt("creatorid")));
+						auctions.get(i).addBlock(new Block(index, jsonObject.get("value").toString(), jsonObject.getString("timestamp"), "", jsonObject.getString("creatorid")));
 						byte[] b1 = jsonObject.toString().getBytes();
 						InetAddress ia = InetAddress.getLocalHost();
 						DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
@@ -361,8 +406,34 @@ public class AuctionRepository {
 						InetAddress ia2 = InetAddress.getLocalHost();
 						DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia2, dp.getPort());
 						ds.send(dp2);
+					} 
+					else {
+						if(Integer.parseInt(auctions.get(i).getLatestBlock().data) >= jsonObject.getInt("value")) {
+							byte[] b1 = "Value inserted is inferior to the highest bid!".getBytes();
+							InetAddress ia = InetAddress.getLocalHost();
+							DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+							ds.send(dp1);
+						}
+						else {
+							index = auctions.get(i).getLatestBlock().index;
+							index++;
+							auctions.get(i).addBlock(new Block(index, jsonObject.get("value").toString(), jsonObject.getString("timestamp"), "", jsonObject.getString("creatorid")));
+							byte[] b1 = jsonObject.toString().getBytes();
+							InetAddress ia = InetAddress.getLocalHost();
+							DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
+							ds.send(dp1);
+							byte[] b2 = "".getBytes();
+							InetAddress ia2 = InetAddress.getLocalHost();
+							DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia2, dp.getPort());
+							ds.send(dp2);
+						}
 					}
 				}
+				/*else {
+					InetAddress ia2 = InetAddress.getLocalHost();
+					DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia2, dp.getPort());
+					ds.send(dp2);
+				}*/
 			}
 		}
 		
@@ -380,12 +451,94 @@ public class AuctionRepository {
 		else if(jsonObject.get("action").equals("showbids")) {
 			List<String> bids = new ArrayList<String>();
 			int auction = jsonObject.getInt("auction");
+			JSONObject obj = new JSONObject();
 			for(int i = 0; i < auctions.size(); i++) {
-				if(i == auction) {
-					bids = auctions.get(i).printChain();
+				if(auctions.get(i).type.equals("blind")) {
+					obj.put("bids", "none");
+				}
+				else {
+					if(i == auction) {
+						bids = auctions.get(i).printChain();
+						obj.put("bids", bids.toString());
+					}
 				}
 			}
-			byte[] b1 = bids.toString().getBytes();
+			byte[] o = obj.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(o, o.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+
+		else if(jsonObject.get("action").equals("checkoutcome")) {
+			String list = "\n";
+			for(int i = 0; i < terminated.size(); i++) {
+				for(int j = 0; j < terminated.get(i).chain.size(); j++) {
+					if(terminated.get(i).chain.get(j).bidder.equals(jsonObject.get("creatorid"))) {
+						list += "Auction number: " + terminated.get(i).id + " | Description: " + terminated.get(i).description + " | Creator: " + terminated.get(i).creator + "\n";
+					}
+				}
+			}
+			JSONObject obj = new JSONObject();
+			obj.put("options", list);
+			byte[] b1 = obj.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+
+		else if(jsonObject.get("action").equals("checkcont")) {
+			String s = "\n";
+			for(int i = 0; i < terminated.size(); i++) {
+				if(terminated.get(i).id == jsonObject.getInt("auction")) {
+					s += "Winner of this auction was " + terminated.get(i).getLatestBlock().bidder + " with a bid of " + terminated.get(i).getLatestBlock().data;
+				}
+			}
+			JSONObject obj = new JSONObject();
+			obj.put("resp", s);
+			byte[] b1 = obj.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+
+		else if(jsonObject.get("action").equals("bidsbyclient")) {
+			String s = "\n";
+			for(int i = 0; i < clients.size(); i++) {
+				s += "Client number: " + clients.get(i).id + " | Name: " + clients.get(i).name + "\n";
+			}
+			JSONObject obj = new JSONObject();
+			obj.put("options", s);
+			byte[] b1 = obj.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+
+		else if(jsonObject.get("action").equals("clientcont")) {
+			String s = "\n";
+			for(int i = 0; i < clients.size(); i++) {
+				if(clients.get(i).id == jsonObject.getInt("client")) {
+					for(int j = 0; j < auctions.size(); j++) {
+						if(!auctions.get(j).type.equals("blind")) {
+							for(int k = 0; k < auctions.get(j).chain.size(); k++) {
+								if(auctions.get(j).chain.get(k).bidder.equals(clients.get(i).name)) {
+									s += "Open - Auction number: " + auctions.get(j).id + " | Description: " + auctions.get(j).description + " | Value of bid: " + auctions.get(j).chain.get(k).data + "\n";
+								}
+							}
+						}
+					}
+					for(int j = 0; j < terminated.size(); j++) {
+						for(int k = 0; k < terminated.get(j).chain.size(); k++) {
+							if(terminated.get(j).chain.get(k).bidder.equals(clients.get(i).name)) {
+								s += "Terminated - Auction number: " + terminated.get(j).id + " | Description: " + terminated.get(j).description + " | Value of bid: " + terminated.get(j).chain.get(k).data + "\n";
+							}
+						}
+					}
+				}
+			}
+			JSONObject obj = new JSONObject();
+			obj.put("bids", s);
+			byte[] b1 = obj.toString().getBytes();
 			InetAddress ia = InetAddress.getLocalHost();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
 			ds.send(dp1);
