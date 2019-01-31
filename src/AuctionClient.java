@@ -18,6 +18,8 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
+import javax.lang.model.util.ElementScanner6;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
@@ -72,6 +74,7 @@ public class AuctionClient {
 	private static Scanner sc = new Scanner(System.in);
 	private static String line = "";
 	private static int clientid;
+	private static int seq = 1;
 	private static String name;
 	private static Key publicKey;
 	private static Key privateKey;
@@ -124,12 +127,11 @@ public class AuctionClient {
 		}
 		*/
 		generateKeys();
-		//Random r = new Random();
 
 		//Set name for this client
 		System.out.println("Welcome to our Auction Application!");
 		System.out.print("Please enter your name: ");
-		name = sc.next();
+		name = sc.nextLine();
 
 		//Connection to the servers
 		DatagramSocket ds = new DatagramSocket();
@@ -137,11 +139,11 @@ public class AuctionClient {
 		InetAddress ia = InetAddress.getLocalHost();
 		data.put("action", "newclient");
 		data.put("name", name);
+		data.put("seq", seq);
 		String encodedKey = encoder.encodeToString(publicKey.getEncoded());
 		data.put("clientkey", encodedKey);
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 8000);
-		DatagramPacket dp0 = new DatagramPacket(b, b.length, ia, 9000);
 		ds.send(dp);
 
 		//Response from manager server
@@ -150,16 +152,22 @@ public class AuctionClient {
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
 		JSONObject jsonObject = new JSONObject(response);
+		checkseq(jsonObject.getInt("seq"));
 		clientid = jsonObject.getInt("clientid");
 		managerPublicKey = getKey(jsonObject.getString("manpubkey"));
 
 		//Response from repository server
+		data.remove("seq");
+		data.put("seq", seq);
+		byte[] b3 = data.toString().getBytes();
+		DatagramPacket dp0 = new DatagramPacket(b3, b3.length, ia, 9000);
 		ds.send(dp0);
 		byte[] b2 = new byte[1024];
 		DatagramPacket dp2 = new DatagramPacket(b2, b2.length);
 		ds.receive(dp2);
 		String response1 = new String(dp2.getData());
 		JSONObject jsonObject2 = new JSONObject(response1);
+		checkseq(jsonObject2.getInt("seq"));
 		repositoryPublicKey = getKey(jsonObject2.getString("reppubkey"));
 
 		//Create file for this client
@@ -177,9 +185,14 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		System.out.println("\n - AUCTION CREATION - \n");
-		System.out.println("Please describe what you are auctioning: ");
+
+		System.out.println("Name of the auction: ");
 		System.out.print("> ");
-		String description = sc.next();
+		String aucname = sc.nextLine();
+
+		System.out.println("\nPlease describe what you are auctioning: ");
+		System.out.print("> ");
+		String description = sc.nextLine();
 
 		//Auction restrictions
 		System.out.println("\nWhat type of auction do you wish to create?");
@@ -189,25 +202,28 @@ public class AuctionClient {
 		int type = sc.nextInt();
 		if(type == 1) {
 			data.put("type", "ascending");
-			data.put("creatorid", name);
 		}
 		else if(type == 2) {
 			data.put("type", "blind");
-			byte[] bytes = name.getBytes();
-			System.out.println(bytes);
-			byte[] cipheredcreator = cipherAES(bytes);
-			byte[] cipheredkey = cipherRSA(secKey.getEncoded(), repositoryPublicKey);
-			data.put("creatorid", encoder.encodeToString(cipheredcreator));
-			data.put("key", encoder.encodeToString(cipheredkey));
 		}
-		else
+		else {
+			System.out.println("\nInvalid option!");
 			return;
+		}
+
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes);
+		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), managerPublicKey);
+		data.put("creatorid", encoder.encodeToString(cipheredcreator));
+		data.put("key", encoder.encodeToString(cipheredkey));
 
 		//Send data to manager
 		Date timestamp = new Date();
 		data.put("timestamp", timestamp);
 		data.put("description", description);
+		data.put("name", aucname);
 		data.put("action", "create");
+		data.put("seq", seq);
 		JSONArray arr = new JSONArray();
 		arr.put(0);
 		data.put("bid", arr);
@@ -215,6 +231,16 @@ public class AuctionClient {
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 8000);
 		ds.send(dp);
+
+		//Response from manager
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		JSONObject jo = new JSONObject(response);
+		if(jo.getInt("ack") == 1 && checkseq(jo.getInt("seq"))) {
+			System.out.println("\nAuction created successfully!");
+		}
 	}
 
 	//List all auctions
@@ -223,6 +249,7 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		data.put("action", "list");
+		data.put("seq", seq);
 		InetAddress ia = InetAddress.getLocalHost();
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
@@ -233,7 +260,10 @@ public class AuctionClient {
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
-		System.out.println(response);
+		JSONObject jo = new JSONObject(response);
+		if(checkseq(jo.getInt("seq"))) {
+			System.out.println(jo.getString("list"));
+		}
 	}
 	
 	//List auctions from other clients
@@ -242,7 +272,12 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		data.put("action", "listothers");
-		data.put("creatorid", name);
+		data.put("seq", seq);
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes);
+		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), managerPublicKey);
+		data.put("creatorid", encoder.encodeToString(cipheredcreator));
+		data.put("key", encoder.encodeToString(cipheredkey));
 		InetAddress ia = InetAddress.getLocalHost();
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
@@ -253,7 +288,10 @@ public class AuctionClient {
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
-		System.out.println(response);
+		JSONObject jo = new JSONObject(response);
+		if(checkseq(jo.getInt("seq"))) {
+			System.out.println(jo.getString("list"));
+		}
 	}
 	
 	//List auctions from this client
@@ -262,7 +300,12 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
 		data.put("action", "listmine");
-		data.put("creatorid", name);
+		data.put("seq", seq);
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes);
+		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), managerPublicKey);
+		data.put("creatorid", encoder.encodeToString(cipheredcreator));
+		data.put("key", encoder.encodeToString(cipheredkey));
 		InetAddress ia = InetAddress.getLocalHost();
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
@@ -273,7 +316,10 @@ public class AuctionClient {
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
-		System.out.println(response);
+		JSONObject jo = new JSONObject(response);
+		if(checkseq(jo.getInt("seq"))) {
+			System.out.println(jo.getString("list"));
+		}
 	}
 
 	//Terminate an auction
@@ -287,13 +333,28 @@ public class AuctionClient {
 		int choice = sc.nextInt();
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
-		data.put("creatorid", name);
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes);
+		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), managerPublicKey);
+		data.put("key", encoder.encodeToString(cipheredkey));
+		data.put("creatorid", encoder.encodeToString(cipheredcreator));
+		data.put("seq", seq);
 		data.put("action", "terminate");
 		data.put("position", choice);
 		InetAddress ia = InetAddress.getLocalHost();
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
 		ds.send(dp);
+
+		//Response from repository
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String response = new String(dp1.getData());
+		JSONObject jo = new JSONObject(response);
+		if(checkseq(jo.getInt("seq")) && jo.getInt("ack") == 1) {
+			System.out.println("\nAuction terminated successfully!");
+		}
 	}
 	
 	//Bid on an active auction
@@ -305,7 +366,7 @@ public class AuctionClient {
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject bid = new JSONObject();
 		bid.put("action", "bid");
-		bid.put("bidder", name);
+		bid.put("seq", seq);
 		byte[] bidb = bid.toString().getBytes();
 		InetAddress ia1 = InetAddress.getLocalHost();
 		DatagramPacket dp2 = new DatagramPacket(bidb, bidb.length, ia1, 9000);
@@ -315,9 +376,10 @@ public class AuctionClient {
 		byte[] resp = new byte[1024];
 		DatagramPacket respp = new DatagramPacket(resp, resp.length);
 		ds.receive(respp);
-		System.out.println("recebi cryptopuzzle");
+		System.out.println("Solving cryptopuzzle...");
 		String r = new String(respp.getData());
 		JSONObject jo = new JSONObject(r);
+		checkseq(jo.getInt("seq"));
 		int difficulty = jo.getInt("difficulty");
 		String comparison = "";
 		for(int i = 0; i < difficulty; i++) {
@@ -325,32 +387,22 @@ public class AuctionClient {
 		}	
 		String hash = "";
 		int var = 0;
-		hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"), var); 
+		hash = calculateHash(jo.getString("action"), jo.getInt("seq"), var); 
 		while(!(hash.substring(0, difficulty).equals(comparison))) {		
 			var++;
-			hash = calculateHash(jo.getString("arg1"), jo.getString("arg2"), var);
+			hash = calculateHash(jo.getString("action"), jo.getInt("seq"), var);
 		}
+		System.out.println(hash);
 		byte[] cipheredhash = cipherAES(hash.getBytes());
 		byte[] cipheredkey = cipherRSA(secKey.getEncoded(), repositoryPublicKey);
 		JSONObject hashjson = new JSONObject();
+		
 		hashjson.put("action", "bid");
+		hashjson.put("seq", seq);
 		hashjson.put("hash", encoder.encodeToString(cipheredhash));
 		hashjson.put("key", encoder.encodeToString(cipheredkey));
 		//System.out.println(encoder.encodeToString(secKey.getEncoded()));
 		//System.out.println(hashjson.toString());
-		byte[] send = hashjson.toString().getBytes();
-		InetAddress ia3 = InetAddress.getLocalHost();
-		DatagramPacket dp3 = new DatagramPacket(send, send.length, ia3, 9000);
-		System.out.println("resolvi cryptopuzzle");
-		ds.send(dp3);
-
-		//finally
-		byte[] byte1 = new byte[1024];
-		DatagramPacket dpac = new DatagramPacket(byte1, byte1.length);
-		ds.receive(dpac);
-
-		//Bid creation
-		JSONObject data1 = new JSONObject();
 		System.out.println("\nTo which auction do you wish to bid?");
 		System.out.print("> ");
 		int choice = sc.nextInt();
@@ -358,24 +410,38 @@ public class AuctionClient {
 		System.out.print("> ");
 		int value = sc.nextInt();
 		Date timestamp = new Date();
-		data1.put("creatorid", name);
-		data1.put("timestamp", timestamp);
-		data1.put("action", "bidcont");
-		data1.put("auction", choice);
-		data1.put("value", value);
-
-		//Send data to repository
-		InetAddress ia = InetAddress.getLocalHost();
-		byte[] b = data1.toString().getBytes();
-		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
-		ds.send(dp);
-
-		//Response from repository
-		byte[] b1 = new byte[1024];
-		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
-		ds.receive(dp1);
-		String response = new String(dp1.getData());
-		System.out.println(response);
+		String val = String.valueOf(value);
+		byte[] bytesvalue = val.getBytes();
+		byte[] cipheredvalue = cipherAES(bytesvalue);
+		byte[] cipheredkey2 = cipherRSA(secKey.getEncoded(), managerPublicKey);
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes);
+		hashjson.put("creatorid", encoder.encodeToString(cipheredcreator));
+		hashjson.put("key2", encoder.encodeToString(cipheredkey2));
+		hashjson.put("timestamp", timestamp);
+		hashjson.put("auction", choice);
+		hashjson.put("value", encoder.encodeToString(cipheredvalue));
+		byte[] send = hashjson.toString().getBytes();
+		InetAddress ia3 = InetAddress.getLocalHost();
+		DatagramPacket dp3 = new DatagramPacket(send, send.length, ia3, 9000);
+		ds.send(dp3);
+		
+		//finally
+		byte[] byte1 = new byte[1024];
+		DatagramPacket dpac = new DatagramPacket(byte1, byte1.length);
+		ds.receive(dpac);
+		String r1 = new String(dpac.getData());
+		JSONObject jo2 = new JSONObject(r1);
+		
+		if(jo2.getInt("ack") == 0) {
+			System.out.println("Incorrect cryptopuzzle or invalid auction.");
+		}
+		else if(checkseq(jo2.getInt("seq")) && jo2.getInt("ack") == 1) {
+			System.out.println("Bid sent succesfully");
+		}
+		else {
+			System.out.println("Unknown error...");
+		}
 	}
 	
 	//Display all bids of an auction
@@ -500,6 +566,7 @@ public class AuctionClient {
 		System.out.println("0 - Exit.");
 		System.out.print("Enter your choice: ");
 		int choice = sc.nextInt();
+		sc.nextLine();
 		return choice;
 	}
 	
@@ -533,7 +600,7 @@ public class AuctionClient {
 	}
 
 	//Calculate hash
-	public static String calculateHash(String s1, String s2, int in) {
+	public static String calculateHash(String s1, int s2, int in) {
 		try {
 			MessageDigest md = MessageDigest.getInstance("SHA-256");
 			String input = s1 + s2 + in;
@@ -582,5 +649,18 @@ public class AuctionClient {
 		Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA1AndMGF1Padding");   
 	    cipher.init(Cipher.DECRYPT_MODE, key);  
 	    return cipher.doFinal(in);
+	}
+
+	static boolean checkseq(int i) {
+		System.out.println(seq + " - " + i);
+		if(i == seq + 1) {
+			seq++;
+			return true;
+		}
+		else {
+			System.out.println("Connection compromised! Exiting...");
+			System.exit(0);
+			return false;
+		}
 	}
 }

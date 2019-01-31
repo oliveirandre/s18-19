@@ -40,6 +40,7 @@ import java.security.cert.X509Certificate;
 import java.util.Enumeration;
 import java.security.Principal;
 import java.security.KeyStore.PrivateKeyEntry;
+import javax.crypto.spec.SecretKeySpec;
 
 class Client {
 
@@ -59,6 +60,8 @@ public class AuctionManager {
 	
 	private static int counter = 0;
 	private static int instcounter = 0;
+	private static String path = "certs/man.p12";
+	private static Principal issuerman = null;
 	static List<Client> clients = new ArrayList<Client>();
 	private static PublicKey publicKey = null;
 	private static PrivateKey privateKey = null;
@@ -68,35 +71,38 @@ public class AuctionManager {
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
 	public static void main(String[] args) throws KeyStoreException, UnrecoverableKeyException, UnrecoverableEntryException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
-		//readCert();
-		//readKey();
-		//idk();
+		generateKeys();	
 		
+		//read own certificate
 		KeyStore p12 = KeyStore.getInstance("pkcs12");
-        p12.load(new FileInputStream("certs/man.p12"), "".toCharArray());
+        p12.load(new FileInputStream(path), "".toCharArray());
 		Enumeration e = p12.aliases();
-		System.out.println(e);
         while (e.hasMoreElements()) {
             String alias = (String) e.nextElement();
             X509Certificate c = (X509Certificate) p12.getCertificate(alias);
-            Principal subject = c.getSubjectDN();
-            String subjectArray[] = subject.toString().split(",");
-            for (String s : subjectArray) {
-                String[] str = s.trim().split("=");
-                String key = str[0];
-                String value = str[1];
-                System.out.println(key + " - " + value);
-            }
+            issuerman = c.getIssuerDN();
 		}
 		
-		char[] password="".toCharArray();
+		//Send certificate path to repository
+		DatagramSocket ds = new DatagramSocket(8000);
+		JSONObject data = new JSONObject();
+		InetAddress ia = InetAddress.getLocalHost();
+		data.put("action", "serverconnection");
+		data.put("path", path);
+		String encodedKey = Base64.getEncoder().encodeToString(publicKey.getEncoded());
+		data.put("manpubkey", encodedKey);
+		byte[] b1 = data.toString().getBytes();
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
+		ds.send(dp1);	
+
+		char[] password = "".toCharArray();
 		String alias = "1";
 		PrivateKey privateKey1 = (PrivateKey) p12.getKey(alias, password);
 		PrivateKeyEntry privateKeyEntry = (PrivateKeyEntry) p12.getEntry(alias, new KeyStore.PasswordProtection(password));
-		System.out.println(encoder.encodeToString(privateKey1.getEncoded()));
+		//System.out.println(encoder.encodeToString(privateKey1.getEncoded()));
 
 		//Generate public and private keys
-		generateKeys();	
+		
 		
 		/*Signature dsa = Signature.getInstance("SHA1withDSA", "SUN");
 		dsa.initSign(privateKey);
@@ -121,17 +127,6 @@ public class AuctionManager {
 		keyfos.write(key);
 		keyfos.close();*/
 
-		//Send public key to repository
-		DatagramSocket ds = new DatagramSocket(8000);
-		JSONObject data = new JSONObject();
-		InetAddress ia = InetAddress.getLocalHost();
-		data.put("action", "serverconnection");
-		String encodedKey = Base64.getEncoder().encodeToString(publicKey.getEncoded());
-		data.put("manpubkey", encodedKey);
-		byte[] b1 = data.toString().getBytes();
-		DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
-		ds.send(dp1);		
-
 		while(true) {
 			byte[] b = new byte[1024];
 			DatagramPacket dp = new DatagramPacket(b, b.length);
@@ -139,37 +134,45 @@ public class AuctionManager {
 			String line = new String(dp.getData());
 			JSONObject jsonObject = new JSONObject(line);
 			readCommand(jsonObject, dp, ds);
-			instcounter++;
-			
-			//Renew Keys
-			if(instcounter == 10) {
-				generateKeys();
-				instcounter = 0;
-			}
 		}
 	}
 
-	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws IOException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException {
+	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws KeyStoreException, CertificateException, IOException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException {
 		//Receive repository's public key
 		if(jsonObject.get("action").equals("serverconnection")) {
-			repositoryPublicKey = getKey(jsonObject.getString("reppubkey"));
-			System.out.println("Servers are connected successfuly");
+			KeyStore p12 = KeyStore.getInstance("pkcs12");
+			p12.load(new FileInputStream(jsonObject.getString("path")), "".toCharArray());
+			Enumeration e = p12.aliases();
+			Principal issuer = null;
+			while (e.hasMoreElements()) {
+				String alias = (String) e.nextElement();
+				X509Certificate c = (X509Certificate) p12.getCertificate(alias);
+				issuer = c.getIssuerDN();
+			}
+
+			if(issuerman.equals(issuer)) {
+				repositoryPublicKey = getKey(jsonObject.getString("reppubkey"));
+				System.out.println("Servers are connected successfuly");
+			}
+			else
+				System.out.println("Repository not trustable!");
 		}
 		
 		//Client connection
 		if(jsonObject.get("action").equals("newclient")) {
 			//Add new client to ArrayList
 			counter++;
+
 			PublicKey clientKey = getKey(jsonObject.getString("clientkey"));
 			Client c = new Client(jsonObject.getString("name"), counter, clientKey);
 			clients.add(c);
-
 			System.out.println(jsonObject.getString("name") + " connected successfuly");
 
 			//Give client its new id and manager's public key
 			JSONObject data = new JSONObject();
 			InetAddress ia = InetAddress.getLocalHost();
 			data.put("clientid", counter);
+			data.put("seq", jsonObject.getInt("seq") + 1);
 			String manpubkey = encoder.encodeToString(publicKey.getEncoded());
 			data.put("manpubkey", manpubkey);
 			byte[] b1 = data.toString().getBytes();
@@ -188,15 +191,52 @@ public class AuctionManager {
 			byte[] b = jsonObject.toString().getBytes();
 			DatagramPacket dp1 = new DatagramPacket(b, b.length, ia, 9000);
 			ds1.send(dp1);
+
+			//receive ack from rep and send ack to client
+			byte[] b1 = new byte[1024];
+			DatagramPacket dp2 = new DatagramPacket(b1, b1.length);
+			ds.receive(dp2);
+			String response = new String(dp2.getData());
+			JSONObject jo = new JSONObject(response);
+			if(jo.getInt("ack") == 1) {
+				jo.put("seq", jsonObject.getInt("seq") + 1);
+				byte[] b2 = jo.toString().getBytes();
+				DatagramPacket dp3 = new DatagramPacket(b2, b2.length, ia, dp.getPort());
+				ds.send(dp3);
+			}
 		}
 		
 		//New bid
 		if(jsonObject.get("action").equals("bid")) {
+			if(jsonObject.getString("type").equals("blind")) {
+				//bid tem de ser maior que a última
+			}
+			else {
+				byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key2")), privateKey);
+				//System.out.println(encoder.encodeToString(decipheredkey));
+				SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
+				//System.out.println(encoder.encodeToString(originalKey.getEncoded()));
+				byte[] decipheredvalue = decipherAES(decoder.decode(jsonObject.getString("value")), originalKey);
+				String s = new String(decipheredvalue);
+				jsonObject.remove("value");
+				jsonObject.put("value", s);
+				System.out.println(s);
+			}
+
+			byte[] b = jsonObject.toString().getBytes();
+			InetAddress inet = InetAddress.getLocalHost();
+			DatagramPacket d = new DatagramPacket(b, b.length, inet, 9000);
+			ds.send(d);
+
 			//Missing: signature for receipt
 
-			BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getInt("creatorid") + ".txt", true));
+			/*BufferedWriter writer = new BufferedWriter(new FileWriter("Receipts/client" + jsonObject.getInt("creatorid") + ".txt", true));
 			writer.append(jsonObject.toString() + "\n");
-			writer.close();
+			writer.close();*/
+		}
+
+		if(jsonObject.get("action").equals("terminate")) {
+			
 		}
 	}
 
@@ -212,8 +252,6 @@ public class AuctionManager {
 		KeyPair kp = kpg.generateKeyPair();
 		publicKey = kp.getPublic();
 		privateKey = kp.getPrivate();
-
-		
 	}
 	
 	//Cipher with symmetric key
@@ -251,39 +289,15 @@ public class AuctionManager {
 	    return null;
 	}
 
-	static Certificate readCert() {
+	static byte[] decipherAES(byte[] in, SecretKey key) {
 		try {
-			CertificateFactory fact = CertificateFactory.getInstance("X.509");
-			InputStream is = Files.newInputStream(Paths.get("certs/man.crt"));
-			X509Certificate crt = (X509Certificate) fact.generateCertificate(is);
-			return crt;
-		} catch(Exception e) { 
-			System.out.println("Error while reading certificate: " + e);
-			return null;
+			Cipher aesCipher = Cipher.getInstance("AES");
+			aesCipher.init(Cipher.DECRYPT_MODE, key);
+			return aesCipher.doFinal(in);
 		}
-	}
-
-	static PrivateKey readKey() {
-		try {
-			Path p = Paths.get("certs/man.pem");
-			byte[] bytes = Files.readAllBytes(p);
-			KeyFactory kf = KeyFactory.getInstance("RSA");
-			PKCS8EncodedKeySpec ks = new PKCS8EncodedKeySpec(bytes);
-			return kf.generatePrivate(ks);
-		} catch(Exception e) {
-			System.out.println("Error while reading key: " + e);
-			return null;
+		catch(Exception e) {
+	        e.printStackTrace();
 		}
-	}
-
-	static void idk() {
-		try {
-			KeyStore ks = KeyStore.getInstance("PKCS12");
-			ks.load(new FileInputStream("certs/man.p12"), null);
-			Key pvtkey = ks.getKey("private", null);
-			System.out.println(pvtkey.getEncoded());
-		} catch(Exception e) {
-			e.printStackTrace();
-		}
+		return null;
 	}
 }
