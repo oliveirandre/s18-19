@@ -44,14 +44,16 @@ import javax.crypto.spec.SecretKeySpec;
 
 class Client {
 
-	String name;
 	int id;
-	PublicKey pub;
+	SecretKey sessionkey;
+	String name;
+	String s;
 
-	public Client(String name, int id, PublicKey pub) {
+	public Client(SecretKey sessionkey, String name, String s, int id) {
+		this.sessionkey = sessionkey;
 		this.name = name;
+		this.s = s;
 		this.id = id;
-		this.pub = pub;
 	}
 
 }
@@ -149,7 +151,6 @@ public class AuctionManager {
 				X509Certificate c = (X509Certificate) p12.getCertificate(alias);
 				issuer = c.getIssuerDN();
 			}
-
 			if(issuerman.equals(issuer)) {
 				repositoryPublicKey = getKey(jsonObject.getString("reppubkey"));
 				System.out.println("Servers are connected successfuly");
@@ -160,24 +161,27 @@ public class AuctionManager {
 		
 		//Client connection
 		if(jsonObject.get("action").equals("newclient")) {
-			//Add new client to ArrayList
-			counter++;
-
-			PublicKey clientKey = getKey(jsonObject.getString("clientkey"));
-			Client c = new Client(jsonObject.getString("name"), counter, clientKey);
-			clients.add(c);
-			System.out.println(jsonObject.getString("name") + " connected successfuly");
-
-			//Give client its new id and manager's public key
+			//Give client manager's public key
 			JSONObject data = new JSONObject();
 			InetAddress ia = InetAddress.getLocalHost();
-			data.put("clientid", counter);
 			data.put("seq", jsonObject.getInt("seq") + 1);
 			String manpubkey = encoder.encodeToString(publicKey.getEncoded());
 			data.put("manpubkey", manpubkey);
 			byte[] b1 = data.toString().getBytes();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
 			ds.send(dp1);
+
+			byte[] b2 = new byte[1024];
+			DatagramPacket dp2 = new DatagramPacket(b2, b2.length);
+			ds.receive(dp2);
+			String response1 = new String(dp2.getData());
+			JSONObject jsonObject2 = new JSONObject(response1);
+			byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject2.getString("key")), privateKey);
+			SecretKey sessionkey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
+			byte[] name = decipherAES(decoder.decode(jsonObject2.getString("creatorid")), sessionkey);
+			Client c = new Client(sessionkey, new String(name), jsonObject2.getString("creatorid"), counter);
+			clients.add(c);
+			counter++;
 		}
 		
 		//Create a new auction
@@ -209,18 +213,22 @@ public class AuctionManager {
 		//New bid
 		if(jsonObject.get("action").equals("bid")) {
 			if(jsonObject.getString("type").equals("blind")) {
-				//bid tem de ser maior que a última
+				//falta tratar quando é blind
 			}
 			else {
+				//falta bid tem de ser maior que a última
 				byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key2")), privateKey);
-				//System.out.println(encoder.encodeToString(decipheredkey));
 				SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
-				//System.out.println(encoder.encodeToString(originalKey.getEncoded()));
 				byte[] decipheredvalue = decipherAES(decoder.decode(jsonObject.getString("value")), originalKey);
 				String s = new String(decipheredvalue);
 				jsonObject.remove("value");
-				jsonObject.put("value", s);
-				System.out.println(s);
+				System.out.println(jsonObject.getString("prevbid") + " - " + s);
+				if(Integer.parseInt(jsonObject.getString("prevbid")) >= Integer.parseInt(s)) {
+					jsonObject.put("value", "error");
+				}
+				else {
+					jsonObject.put("value", s);
+				}
 			}
 
 			byte[] b = jsonObject.toString().getBytes();
@@ -236,7 +244,72 @@ public class AuctionManager {
 		}
 
 		if(jsonObject.get("action").equals("terminate")) {
+			//falta isto
+		}
+
+		if(jsonObject.get("action").equals("checkcont")) {
+			byte[] b = jsonObject.toString().getBytes();
+			InetAddress inet = InetAddress.getLocalHost();
+			DatagramPacket d = new DatagramPacket(b, b.length, inet, 9000);
+			ds.send(d);
+
+			byte[] res = new byte[1024];
+			DatagramPacket resp = new DatagramPacket(res, res.length);
+			ds.receive(resp);
+			String r = new String(resp.getData());
+			JSONObject jo = new JSONObject(r);
 			
+			String str = "";
+			for(int c = 0; c < clients.size(); c++) {
+				System.out.println(clients.get(c).s + " - " + jo.get("bidder"));
+				if(clients.get(c).s.equals(jo.get("bidder"))) {
+					str = "The winner is " + clients.get(c).name + " with a bid of " + jo.get("bid");
+				}
+			}
+			JSONObject j = new JSONObject();
+			j.put("seq", jo.getInt("seq"));
+			j.put("winner", str);
+			System.out.println(j.toString());
+			byte[] by = j.toString().getBytes();
+			DatagramPacket pack = new DatagramPacket(by, by.length, inet, dp.getPort());
+			ds.send(pack);
+		}
+
+		else if(jsonObject.get("action").equals("bidsbyclient")) {
+			String s = "\n";
+			for(int i = 0; i < clients.size(); i++) {
+				s += "Client: " + clients.get(i).id + " | Name: " + clients.get(i).name + "\n";
+			}
+			JSONObject obj = new JSONObject();
+			obj.put("options", s);
+			obj.put("seq", jsonObject.getInt("seq") + 1);
+			byte[] b1 = obj.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
+			ds.send(dp1);
+		}
+
+		else if(jsonObject.get("action").equals("clientcont")) {
+			JSONObject obj = new JSONObject();
+			for(int i = 0; i < clients.size(); i++) {
+				if(clients.get(i).id == jsonObject.getInt("client")) {
+					obj.put("name", clients.get(i).s);
+				}
+			}
+			obj.put("seq", jsonObject.getInt("seq") + 1);
+			obj.put("action", "clientcont");
+			byte[] b1 = obj.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
+			ds.send(dp1);
+
+			byte[] res = new byte[1024];
+			DatagramPacket resp = new DatagramPacket(res, res.length);
+			ds.receive(resp);
+			String r = new String(resp.getData());
+			byte[] x = r.getBytes();
+			DatagramPacket d = new DatagramPacket(x, x.length, ia, dp.getPort());
+			ds.send(d);
 		}
 	}
 
