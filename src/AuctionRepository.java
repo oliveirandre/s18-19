@@ -181,6 +181,8 @@ public class AuctionRepository {
 	
 	public static void main(String[] args) throws UnrecoverableKeyException, SignatureException, KeyStoreException, CertificateException,IOException, NoSuchAlgorithmException, InvalidKeyException, JSONException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		
+		generateKeys();
+
 		KeyStore p12 = KeyStore.getInstance("pkcs12");
         p12.load(new FileInputStream("certs/rep.p12"), "".toCharArray());
 		privateKey = (PrivateKey) p12.getKey("1", "".toCharArray());
@@ -231,8 +233,7 @@ public class AuctionRepository {
 		if(jsonObject.get("action").equals("newclient")) {
 			JSONObject data = new JSONObject();
 			InetAddress ia = InetAddress.getLocalHost();
-			String reppubkey = encoder.encodeToString(publicKey.getEncoded());
-			data.put("reppubkey", reppubkey);
+			data.put("path", path);
 			data.put("seq", jsonObject.getInt("seq") + 1);
 			byte[] b1 = data.toString().getBytes();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
@@ -492,6 +493,7 @@ public class AuctionRepository {
 			List<String> bids = new ArrayList<String>();
 			int auction = jsonObject.getInt("auction");
 			JSONObject obj = new JSONObject();
+			int nbids = 0;
 			for(int i = 0; i < auctions.size(); i++) {
 				if(auctions.get(i).type.equals("blind")) {
 					obj.put("bids", "none");
@@ -503,11 +505,43 @@ public class AuctionRepository {
 					}
 				}
 			}
-			obj.put("seq", jsonObject.getInt("seq") + 1);
-			byte[] o = obj.toString().getBytes();
-			InetAddress ia = InetAddress.getLocalHost();
-			DatagramPacket dp1 = new DatagramPacket(o, o.length, ia, dp.getPort());
-			ds.send(dp1);
+			int l = 0;
+			for(int j = 0; j < terminated.size(); j++) {
+				if(terminated.get(j).id == auction) {
+					l = 1;
+					for(int k = 0; k < terminated.get(j).chain.size(); k++) {
+						obj.put("bids" + k, terminated.get(j).chain.get(k).data);
+						obj.put("bidder" + k, terminated.get(j).chain.get(k).bidder);
+						nbids++;
+					}
+					obj.put("type", terminated.get(j).type);
+					obj.put("action", "showbids");
+					obj.put("nbids", nbids);
+					obj.put("seq", jsonObject.getInt("seq") + 1);
+					System.out.println(obj.toString());
+					byte[] o = obj.toString().getBytes();
+					InetAddress ia = InetAddress.getLocalHost();
+					DatagramPacket dp1 = new DatagramPacket(o, o.length, ia, 8000);
+					ds.send(dp1);
+
+					byte[] rman = new byte[1024];
+					DatagramPacket resprman = new DatagramPacket(rman, rman.length);
+					ds.receive(resprman);
+					String r2 = new String(resprman.getData());
+					byte[] o2 = r2.getBytes();
+					DatagramPacket dp2 = new DatagramPacket(o2, o2.length, ia, dp.getPort());
+					ds.send(dp2);
+				}
+			}
+			if(l == 0) {
+				System.out.println("?");
+				obj.put("seq", jsonObject.getInt("seq") + 1);
+				byte[] o = obj.toString().getBytes();
+				InetAddress ia = InetAddress.getLocalHost();
+				DatagramPacket dp1 = new DatagramPacket(o, o.length, ia, dp.getPort());
+				ds.send(dp1);
+			}
+			
 		}
 
 		else if(jsonObject.get("action").equals("checkoutcome")) {
@@ -534,14 +568,15 @@ public class AuctionRepository {
 			JSONObject obj = new JSONObject();
 			int options = 0;
 			for(int i = 0; i < terminated.size(); i++) {
-				if(terminated.get(i).id == jsonObject.getInt("auction") && terminated.get(i).type.equals("ascending")) {
+				if(terminated.get(i).id == jsonObject.getInt("auction") && !terminated.get(i).type.equals("blind")) {
 					obj.put("bidder", terminated.get(i).getLatestBlock().bidder);
 					obj.put("bid", terminated.get(i).getLatestBlock().data);
 					obj.put("type", terminated.get(i).type);
+					break;
 				}
 				else {
 					obj.put("type", terminated.get(i).type);
-					for(int j = 1; j < terminated.get(i).chain.size(); j++) {
+					for(int j = 0; j < terminated.get(i).chain.size(); j++) {
 						obj.put("bidder" + j, terminated.get(i).chain.get(j).bidder);
 						obj.put("value" + j, terminated.get(i).chain.get(j).data);
 						options++;
@@ -559,12 +594,17 @@ public class AuctionRepository {
 
 		else if(jsonObject.get("action").equals("clientcont")) {
 			String s = "";
+			int sum = 0;
+			JSONObject obj = new JSONObject();
 			for(int j = 0; j < auctions.size(); j++) {
 				if(!auctions.get(j).type.equals("blind")) {
 					for(int k = 0; k < auctions.get(j).chain.size(); k++) {
 						if(auctions.get(j).chain.get(k).bidder.equals(jsonObject.get("name"))) {
-							s += "Open - Auction number: " + auctions.get(j).id + " | Description: " + auctions.get(j).description + " | Value of bid: " + auctions.get(j).chain.get(k).data + "\n";
-							break;
+							obj.put("type2"+sum, "0");
+							obj.put("bid"+sum, auctions.get(j).chain.get(k).data);
+							obj.put("auction"+sum, auctions.get(j).id);
+							obj.put("description"+sum, auctions.get(j).description);
+							sum++;
 						}
 					}
 				}
@@ -572,14 +612,19 @@ public class AuctionRepository {
 			for(int j = 0; j < terminated.size(); j++) {
 				for(int k = 0; k < terminated.get(j).chain.size(); k++) {
 					if(terminated.get(j).chain.get(k).bidder.equals(jsonObject.get("name"))) {
-						s += "Terminated - Auction number: " + terminated.get(j).id + " | Description: " + terminated.get(j).description + " | Value of bid: " + terminated.get(j).chain.get(k).data + "\n";
-						break;
+						obj.put("type2"+sum, "1");
+						obj.put("type"+sum, terminated.get(j).type);
+						obj.put("bid"+sum, terminated.get(j).chain.get(k).data);
+						obj.put("auction"+sum, terminated.get(j).id);
+						obj.put("description"+sum, terminated.get(j).description);
+						sum++;
+						//s += "Terminated - Auction number: " + terminated.get(j).id + " | Description: " + terminated.get(j).description + " | Value of bid: " + terminated.get(j).chain.get(k).data + "\n";
 					}
 				}
 			}
-			JSONObject obj = new JSONObject();
-			obj.put("bids", s);
+			obj.put("sum", sum);
 			obj.put("seq", jsonObject.getInt("seq"));
+			System.out.println(obj.toString());
 			byte[] b1 = obj.toString().getBytes();
 			InetAddress ia = InetAddress.getLocalHost();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);

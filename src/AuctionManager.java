@@ -43,6 +43,7 @@ import java.util.Enumeration;
 import java.security.Principal;
 import java.security.KeyStore.PrivateKeyEntry;
 import javax.crypto.spec.SecretKeySpec;
+import java.util.List;
 
 class Client {
 
@@ -80,6 +81,8 @@ public class AuctionManager {
 	
 	public static void main(String[] args) throws SignatureException, KeyStoreException, UnrecoverableKeyException, UnrecoverableEntryException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		
+		generateKeys();
+
 		FileInputStream fin = new FileInputStream("certs/man.crt");
 		CertificateFactory f = CertificateFactory.getInstance("X.509");
 		X509Certificate cert = (X509Certificate) f.generateCertificate(fin);
@@ -136,8 +139,7 @@ public class AuctionManager {
 			JSONObject data = new JSONObject();
 			InetAddress ia = InetAddress.getLocalHost();
 			data.put("seq", jsonObject.getInt("seq") + 1);
-			String manpubkey = encoder.encodeToString(publicKey.getEncoded());
-			data.put("manpubkey", manpubkey);
+			data.put("path", path);
 			byte[] b1 = data.toString().getBytes();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
 			ds.send(dp1);
@@ -184,6 +186,7 @@ public class AuctionManager {
 		//New bid
 		if(jsonObject.get("action").equals("bid")) {
 			if(jsonObject.getString("type").equals("blind")) {
+				System.out.println(jsonObject.toString());
 				//falta tratar quando é blind
 				byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key2")), privateKey);
 				SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
@@ -250,6 +253,52 @@ public class AuctionManager {
 			//falta isto
 		}
 
+		if(jsonObject.get("action").equals("showbids")) {
+			System.out.println(jsonObject.toString());
+			List<String> l = new ArrayList<String>();
+			if(jsonObject.get("type").equals("blind")) {
+				for(int i = 0; i < jsonObject.getInt("nbids"); i++) {
+					if(i == 0) {
+						l.add("0");
+						jsonObject.remove("bids" + i);
+						jsonObject.remove("bidder" + i);
+					}
+					else {
+						byte[] val = decipherAES(decoder.decode(jsonObject.getString("bids" + i)), secKey);
+						for(int n = 0; n < clients.size(); n++) {
+							if(jsonObject.getString("bidder" + i).equals(clients.get(n).s))
+								l.add(new String(val) + " by " + clients.get(n).name);
+						}
+						jsonObject.remove("bids" + i);
+						jsonObject.remove("bidder" + i);
+					}
+				}
+			}
+			else {
+				for(int i = 0; i < jsonObject.getInt("nbids"); i++) {
+					if(i == 0) {
+						l.add("0");
+						jsonObject.remove("bids" + i);
+						jsonObject.remove("bidder" + i);
+					}
+					else {
+						for(int n = 0; n < clients.size(); n++) {
+							if(jsonObject.getString("bidder" + i).equals(clients.get(n).s))
+								l.add(jsonObject.get("bids" + i) + " by " + clients.get(n).name);
+						}
+						jsonObject.remove("bids" + i);
+						jsonObject.remove("bidder" + i);
+					}
+				}
+			}
+			jsonObject.put("bids", l.toString());
+			System.out.println(jsonObject.toString());
+			byte[] o = jsonObject.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket dp1 = new DatagramPacket(o, o.length, ia, 9000);
+			ds.send(dp1);
+		}
+
 		if(jsonObject.get("action").equals("checkoutcome")) {
 			//byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key")), privateKey);
 			//SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
@@ -307,15 +356,20 @@ public class AuctionManager {
 				ds.send(pack);
 			}
 			else {
-				for(int i = 1; i < jo.getInt("options"); i++) {
-					//byte[] deciphered2 = decipherAES(decoder.decode(encoder.encode(cipheredvalue)), secKey);
-					//byte[] decipheredclient = decipherAES(decoder.decode(jsonObject.getString("creatorid")), originalKey);
-					System.out.println(jo.getString("value"+i));
-					byte[] val = decipherAES(decoder.decode(jo.getString("value" + i)), secKey);
-					if(Integer.parseInt(new String(val)) >= winner) {
-						winner = Integer.parseInt(new String(val));
-						k = i;
+				for(int i = 0; i < jo.getInt("options"); i++) {
+					if(i == 0) {
+						winner = 0;
 					}
+					else {
+						System.out.println(jo.getString("value"+i));
+						byte[] val = decipherAES(decoder.decode(jo.getString("value" + i)), secKey);
+						if(Integer.parseInt(new String(val)) >= winner) {
+							winner = Integer.parseInt(new String(val));
+							k = i;
+						}
+					}
+					//byte[] deciphered2 = decipherAES(decoder.decode(encoder.encode(cipheredvalue)), secKey);
+					//byte[] decipheredclient = decipherAES(decoder.decode(jsonObject.getString("creatorid")), originalKey);					
 				}
 				for(int n = 0; n < clients.size(); n++) {
 					if(jo.getString("bidder" + k).equals(clients.get(n).s))
@@ -359,11 +413,34 @@ public class AuctionManager {
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
 			ds.send(dp1);
 
+
 			byte[] res = new byte[1024];
 			DatagramPacket resp = new DatagramPacket(res, res.length);
 			ds.receive(resp);
 			String r = new String(resp.getData());
-			byte[] x = r.getBytes();
+			JSONObject jo = new JSONObject(r);
+
+			String list = "";
+
+			for(int i = 0; i < jo.getInt("sum"); i++) {
+				if(jo.getInt("type2"+i) == 0) {
+					list += "Open - Auction number " + jo.getInt("auction"+i) + " | Description: " + jo.get("description"+i) + " | Value of bid: " + jo.get("bid"+i) + "\n";
+				}
+				else {
+					if(jo.get("type"+i).equals("blind")) {
+						byte[] val = decipherAES(decoder.decode(jo.getString("bid" + i)), secKey);
+						list += "Terminated - Auction number " + jo.getInt("auction"+i) + " | Description: " + jo.get("description"+i) + " | Value of bid: " + new String(val) + "\n";
+					}
+					else {
+						list += "Terminated - Auction number " + jo.getInt("auction"+i) + " | Description: " + jo.get("description"+i) + " | Value of bid: " + jo.get("bid"+i) + "\n";
+					}
+				}
+			}
+
+			JSONObject j = new JSONObject();
+			j.put("bids", list);
+			j.put("seq", jo.getInt("seq"));
+			byte[] x = j.toString().getBytes();
 			DatagramPacket d = new DatagramPacket(x, x.length, ia, dp.getPort());
 			ds.send(d);
 		}
@@ -376,11 +453,11 @@ public class AuctionManager {
 		secKey = generator.generateKey();
 
 		//RSA - Public and Private Keys
-		KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+		/*KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
 		kpg.initialize(2048);
 		kp = kpg.generateKeyPair();
 		publicKey = kp.getPublic();
-		privateKey = kp.getPrivate();
+		privateKey = kp.getPrivate();*/
 	}
 	
 	//Cipher with symmetric key

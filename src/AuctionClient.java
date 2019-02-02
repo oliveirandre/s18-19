@@ -34,6 +34,12 @@ import java.io.FileOutputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.BufferedInputStream;
+import java.security.cert.CertificateFactory;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 
 /*
  *
@@ -107,7 +113,7 @@ public class AuctionClient {
 		}
 	}
 	
-	public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
+	public static void main(String[] args) throws CertificateException, IOException, NoSuchAlgorithmException {
 		//Generate public and private keys
 		/*
 		try {
@@ -144,7 +150,10 @@ public class AuctionClient {
 		String response = new String(dp1.getData());
 		JSONObject jsonObject = new JSONObject(response);
 		checkseq(jsonObject.getInt("seq"));
-		managerPublicKey = getKey(jsonObject.getString("manpubkey"));
+		FileInputStream fis = new FileInputStream(jsonObject.getString("path"));
+		CertificateFactory cf = CertificateFactory.getInstance("X.509");
+		X509Certificate c = (X509Certificate) cf.generateCertificate(fis);
+		managerPublicKey = c.getPublicKey();
 
 		//send ciphered data to manager
 		data.remove("seq");
@@ -158,7 +167,7 @@ public class AuctionClient {
 		DatagramPacket d = new DatagramPacket(databytes, databytes.length, ia, 8000);
 		ds.send(d);
 
-		//Response from repository server
+		//Data to repository
 		data.remove("seq");
 		data.remove("creatorid");
 		data.remove("key");
@@ -167,13 +176,17 @@ public class AuctionClient {
 		DatagramPacket dp0 = new DatagramPacket(b3, b3.length, ia, 9000);
 		ds.send(dp0);
 
+		//Response from repository
 		byte[] b2 = new byte[1024];
 		DatagramPacket dp2 = new DatagramPacket(b2, b2.length);
 		ds.receive(dp2);
 		String response1 = new String(dp2.getData());
 		JSONObject jsonObject2 = new JSONObject(response1);
 		checkseq(jsonObject2.getInt("seq"));
-		repositoryPublicKey = getKey(jsonObject2.getString("reppubkey"));
+		FileInputStream fis2 = new FileInputStream(jsonObject2.getString("path"));
+		CertificateFactory cf2 = CertificateFactory.getInstance("X.509");
+		X509Certificate c2 = (X509Certificate) cf2.generateCertificate(fis2);
+		repositoryPublicKey = c2.getPublicKey();
 
 		byte[] bytes2 = name.getBytes();
 		byte[] cipheredname2 = cipherAES(bytes2, repsession);
@@ -194,14 +207,14 @@ public class AuctionClient {
 		JSONObject jo = new JSONObject(s);
 		checkseq(jo.getInt("seq"));
 		if(jo.getInt("ack") == 1) {
-			System.out.println("\nConnected!");
+			System.out.println("\nConnection established!");
 		}
 		else {
 			return;
 		}
 
 		//Create file for this client
-		File f = new File("Receipts/client" + response + ".txt");
+		//File f = new File("Receipts/client" + response + ".txt");
 
 		while(true) {
 			int action = menu();
@@ -624,7 +637,7 @@ public class AuctionClient {
 		System.out.println("\nWhich auction do you wish to check?");
 		System.out.print("> ");
 		int choice = sc.nextInt();
-		data1.put("creatorid", encoder.encodeToString(cipheredcreator));
+		data1.put("bidder", encoder.encodeToString(cipheredcreator));
 		data1.put("seq", seq);
 		data1.put("action", "checkcont");
 		data1.put("auction", choice);
@@ -729,7 +742,7 @@ public class AuctionClient {
 		System.out.println("2 - Terminate an auction.");
 		System.out.println("3 - List open and closed auctions.");
 		System.out.println("4 - Bid on an auction.");
-		System.out.println("5 - Display all current bids of an auction.");
+		System.out.println("5 - Display all bids of an auction.");
 		System.out.println("6 - Display all bids sent by a client.");
 		System.out.println("7 - Check the outcome of an auction where you have participated.");
 		System.out.println("8 - Check a receipt.");
