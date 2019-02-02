@@ -5,6 +5,8 @@ import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.HashMap;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.KeyFactory;
@@ -69,6 +71,8 @@ public class AuctionManager {
 	private static PrivateKey privateKey = null;
 	private static SecretKey secKey = null;
 	private static PublicKey repositoryPublicKey = null;
+	private static HashMap<String, String> bids = new HashMap<String, String>();
+	private static HashMap<Integer, HashMap<String, String>> blind = new HashMap<Integer, HashMap<String, String>>();
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
@@ -214,20 +218,40 @@ public class AuctionManager {
 		if(jsonObject.get("action").equals("bid")) {
 			if(jsonObject.getString("type").equals("blind")) {
 				//falta tratar quando é blind
+				byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key2")), privateKey);
+				SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
+				byte[] decipheredvalue = decipherAES(decoder.decode(jsonObject.getString("value")), originalKey);
+				//byte[] decipheredbidder = decipherAES(decoder.decode(jsonObject.getString("bidder")), originalKey);
+				byte[] cipheredvalue = cipherAES(decipheredvalue);
+				//byte[] deciphered2 = decipherAES(decoder.decode(encoder.encode(cipheredvalue)), secKey);
+				//System.out.println(new String(deciphered2));
+				//byte[] cipheredbidder = cipherAES(decipheredbidder);
+				//jsonObject.remove("bidder");
+				jsonObject.remove("value");
+				jsonObject.put("value", new String(encoder.encode(cipheredvalue)));
+				//jsonObject.put("bidder", new String(cipheredbidder));
+				//String val = new String(decipheredvalue);
+				//String bidder = new String(decipheredbidder);
+				//CONTINUAR AQUI, GUARDAR ID DA AUCTION, BIDDER E VALOR DA BID, para saber vencedor posteriormente
+				//blind.put(jsonObject.getInt("auction"), bids);
 			}
 			else {
 				//falta bid tem de ser maior que a última
 				byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key2")), privateKey);
 				SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
 				byte[] decipheredvalue = decipherAES(decoder.decode(jsonObject.getString("value")), originalKey);
+				//byte[] decipheredbidder = decipherAES(decoder.decode(jsonObject.getString("bidder")), originalKey);
 				String s = new String(decipheredvalue);
-				jsonObject.remove("value");
-				System.out.println(jsonObject.getString("prevbid") + " - " + s);
 				if(Integer.parseInt(jsonObject.getString("prevbid")) >= Integer.parseInt(s)) {
-					jsonObject.put("value", "error");
+					jsonObject.put("error", 1);
 				}
 				else {
+					jsonObject.remove("value");
 					jsonObject.put("value", s);
+					//byte[] cipheredbidder = cipherAES(decipheredbidder);
+					//jsonObject.remove("bidder");
+					//jsonObject.put("bidder", new String(cipheredbidder));
+					jsonObject.put("error", 0);
 				}
 			}
 
@@ -247,6 +271,31 @@ public class AuctionManager {
 			//falta isto
 		}
 
+		if(jsonObject.get("action").equals("checkoutcome")) {
+			//byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key")), privateKey);
+			//SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
+			//byte[] decipheredclient = decipherAES(decoder.decode(jsonObject.getString("creatorid")), originalKey);
+			//byte[] cipheredclient = cipherAES(decipheredclient);
+			//jsonObject.remove("key");
+			//jsonObject.remove("creatorid");
+			//jsonObject.put("creatorid", new String(cipheredclient));
+			//InetAddress ia = InetAddress.getLocalHost();
+			//byte[] b = jsonObject.toString().getBytes();
+			//DatagramPacket dp0 = new DatagramPacket(b, b.length, ia, 8000);
+			//ds.send(dp0);
+			/*
+			byte[] b1 = new byte[1024];
+			DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+			ds.receive(dp1);
+			String response = new String(dp1.getData());
+			JSONObject jo = new JSONObject(response);
+			jo.put("seq", jsonObject.getInt("seq") + 1);
+			byte[] b2 = jo.toString().getBytes();
+			DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia, dp.getPort());
+			ds.send(dp2);
+			*/
+		}
+
 		if(jsonObject.get("action").equals("checkcont")) {
 			byte[] b = jsonObject.toString().getBytes();
 			InetAddress inet = InetAddress.getLocalHost();
@@ -258,21 +307,49 @@ public class AuctionManager {
 			ds.receive(resp);
 			String r = new String(resp.getData());
 			JSONObject jo = new JSONObject(r);
+			int winner = 0;
+			int k = 0;
+			String bidder = "";
 			
-			String str = "";
-			for(int c = 0; c < clients.size(); c++) {
-				System.out.println(clients.get(c).s + " - " + jo.get("bidder"));
-				if(clients.get(c).s.equals(jo.get("bidder"))) {
-					str = "The winner is " + clients.get(c).name + " with a bid of " + jo.get("bid");
+			if(jo.get("type").equals("ascending")) {
+				String str = "";
+				for(int c = 0; c < clients.size(); c++) {
+					System.out.println(clients.get(c).s + " - " + jo.get("bidder"));
+					if(clients.get(c).s.equals(jo.get("bidder"))) {
+						str = "The winner is " + clients.get(c).name + " with a bid of " + jo.get("bid");
+					}
 				}
+				JSONObject j = new JSONObject();
+				j.put("seq", jo.getInt("seq"));
+				j.put("winner", str);
+				System.out.println(j.toString());
+				byte[] by = j.toString().getBytes();
+				DatagramPacket pack = new DatagramPacket(by, by.length, inet, dp.getPort());
+				ds.send(pack);
 			}
-			JSONObject j = new JSONObject();
-			j.put("seq", jo.getInt("seq"));
-			j.put("winner", str);
-			System.out.println(j.toString());
-			byte[] by = j.toString().getBytes();
-			DatagramPacket pack = new DatagramPacket(by, by.length, inet, dp.getPort());
-			ds.send(pack);
+			else {
+				for(int i = 1; i < jo.getInt("options"); i++) {
+					//byte[] deciphered2 = decipherAES(decoder.decode(encoder.encode(cipheredvalue)), secKey);
+					//byte[] decipheredclient = decipherAES(decoder.decode(jsonObject.getString("creatorid")), originalKey);
+					System.out.println(jo.getString("value"+i));
+					byte[] val = decipherAES(decoder.decode(jo.getString("value" + i)), secKey);
+					if(Integer.parseInt(new String(val)) >= winner) {
+						winner = Integer.parseInt(new String(val));
+						k = i;
+					}
+				}
+				for(int n = 0; n < clients.size(); n++) {
+					if(jo.getString("bidder" + k).equals(clients.get(n).s))
+						bidder = clients.get(n).name;
+				}
+				JSONObject j = new JSONObject();
+				j.put("seq", jo.getInt("seq"));
+				j.put("winner", "Winner is " + bidder + " with a bid of " + winner);
+				System.out.println(j.toString());
+				byte[] by = j.toString().getBytes();
+				DatagramPacket pack = new DatagramPacket(by, by.length, inet, dp.getPort());
+				ds.send(pack);
+			}
 		}
 
 		else if(jsonObject.get("action").equals("bidsbyclient")) {

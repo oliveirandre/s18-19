@@ -8,6 +8,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
+import java.text.StringCharacterIterator;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Scanner;
@@ -28,6 +29,7 @@ import java.security.InvalidKeyException;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.NoSuchProviderException;
+import java.io.FileOutputStream;
 
 /*
  * -> As auctions têm de ser guardadas no AuctionRepository, e não no AuctionManager.
@@ -95,7 +97,13 @@ public class AuctionClient {
 				terminateAuction();
 			}
 			else if (action == 3) {
-				listAuctions();
+				String s = listAuctions();
+				if(s.equals("")) {
+					System.out.println("\nNo available auctions.");
+				}
+				else {
+					System.out.println(s);
+				}
 			}
 			else if(action == 4) {
 				bidOnAuction();
@@ -200,11 +208,11 @@ public class AuctionClient {
 		DatagramPacket pack = new DatagramPacket(by, by.length);
 		ds.receive(pack);
 		String s = new String(pack.getData());
-		System.out.println(s);
+		//System.out.println(s);
 		JSONObject jo = new JSONObject(s);
 		checkseq(jo.getInt("seq"));
 		if(jo.getInt("ack") == 1) {
-			System.out.println("Connected!");
+			System.out.println("\nConnected!");
 		}
 		else {
 			return;
@@ -237,15 +245,22 @@ public class AuctionClient {
 		System.out.println("1 - Ascending price auction");
 		System.out.println("2 - Blind auction");
 		System.out.print("> ");
-		int type = sc.nextInt();
-		if(type == 1) {
-			data.put("type", "ascending");
-		}
-		else if(type == 2) {
-			data.put("type", "blind");
+		if(sc.hasNextInt()) {
+			int type = sc.nextInt();
+			if(type == 1) {
+				data.put("type", "ascending");
+			}
+			else if(type == 2) {
+				data.put("type", "blind");
+			}
+			else {
+				System.out.println("\nInvalid option!");
+				return;
+			}
 		}
 		else {
 			System.out.println("\nInvalid option!");
+			String error = sc.next();
 			return;
 		}
 
@@ -279,7 +294,7 @@ public class AuctionClient {
 	}
 
 	//List all auctions
-	public static void listAuctions() throws IOException {
+	public static String listAuctions() throws IOException {
 		//Send data to repository
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
@@ -296,13 +311,12 @@ public class AuctionClient {
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
 		JSONObject jo = new JSONObject(response);
-		if(checkseq(jo.getInt("seq"))) {
-			System.out.println(jo.getString("list"));
-		}
+		checkseq(jo.getInt("seq"));
+		return jo.getString("list");
 	}
 	
 	//List auctions from other clients
-	public static void listOthersAuctions() throws IOException {
+	public static String listOthersAuctions() throws IOException {
 		//Send data to repository
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
@@ -321,13 +335,12 @@ public class AuctionClient {
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
 		JSONObject jo = new JSONObject(response);
-		if(checkseq(jo.getInt("seq"))) {
-			System.out.println(jo.getString("list"));
-		}
+		checkseq(jo.getInt("seq"));
+		return jo.getString("list");
 	}
 	
 	//List auctions from this client
-	public static void listMyAuctions() throws IOException {
+	public static String listMyAuctions() throws IOException {
 		//Send data to repository
 		DatagramSocket ds = new DatagramSocket();
 		JSONObject data = new JSONObject();
@@ -347,16 +360,20 @@ public class AuctionClient {
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
 		JSONObject jo = new JSONObject(response);
-		if(checkseq(jo.getInt("seq"))) {
-			System.out.println(jo.getString("list"));
-		}
+		checkseq(jo.getInt("seq"));
+		return jo.getString("list");
 	}
 
 	//Terminate an auction
 	public static void terminateAuction() throws IOException {
 		//List auctions from this client
-		listMyAuctions();
-
+		String s = listMyAuctions();
+		if(s.equals("")) {
+			System.out.println("\nYou have no auctions to terminate!");
+			return;
+		}
+		System.out.println(s);
+		
 		//Send data to repository
 		System.out.println("\nWhich auction do you wish to terminate?");
 		System.out.print("> ");
@@ -390,7 +407,13 @@ public class AuctionClient {
 	//Bid on an active auction
 	public static void bidOnAuction() throws SignatureException, NoSuchAlgorithmException, NoSuchProviderException, InvalidKeyException, IOException {
 		//List auctions from other clients
-		listOthersAuctions();
+		String s = listOthersAuctions();
+		if(s.equals("")) {
+			System.out.println("\nNo available auctions to bid.");
+			return;
+		}
+		else
+			System.out.println(s);
 
 		//Request to create new bid
 		DatagramSocket ds = new DatagramSocket();
@@ -422,7 +445,7 @@ public class AuctionClient {
 			var++;
 			hash = calculateHash(jo.getString("action"), jo.getInt("seq"), var);
 		}
-		System.out.println(hash);
+		//System.out.println(hash);
 		byte[] cipheredhash = cipherAES(hash.getBytes(), repsession);
 		byte[] cipheredkey = cipherRSA(repsession.getEncoded(), repositoryPublicKey);
 		JSONObject hashjson = new JSONObject();
@@ -435,13 +458,27 @@ public class AuctionClient {
 		System.out.println("\nTo which auction do you wish to bid?");
 		System.out.print("> ");
 		int choice = sc.nextInt();
-		System.out.println("\nValue: ");
+		System.out.println("\nValue (must be an integer): ");
 		System.out.print("> ");
-		int value = sc.nextInt();
+		if(sc.hasNextInt()) {
+			int value = sc.nextInt();
+			hashjson.put("error", 0);
+			String val = String.valueOf(value);
+			byte[] bytesvalue = val.getBytes();
+			byte[] cipheredvalue = cipherAES(bytesvalue, mansession);
+			hashjson.put("value", encoder.encodeToString(cipheredvalue));
+		}
+		else {
+			System.out.println("\nInvalid bid value.");
+			String error = sc.next();
+			hashjson.put("error", 1);
+			byte[] send = hashjson.toString().getBytes();
+			InetAddress ia3 = InetAddress.getLocalHost();
+			DatagramPacket dp3 = new DatagramPacket(send, send.length, ia3, 9000);
+			ds.send(dp3);
+			return;
+		}
 		Date timestamp = new Date();
-		String val = String.valueOf(value);
-		byte[] bytesvalue = val.getBytes();
-		byte[] cipheredvalue = cipherAES(bytesvalue, mansession);
 		byte[] cipheredkey2 = cipherRSA(mansession.getEncoded(), managerPublicKey);
 		byte[] bytes = name.getBytes();
 		byte[] cipheredcreator = cipherAES(bytes, mansession);
@@ -449,7 +486,6 @@ public class AuctionClient {
 		hashjson.put("key2", encoder.encodeToString(cipheredkey2));
 		hashjson.put("timestamp", timestamp);
 		hashjson.put("auction", choice);
-		hashjson.put("value", encoder.encodeToString(cipheredvalue));
 		byte[] sign = hashjson.toString().getBytes();
 
 		//sign the bid
@@ -458,8 +494,12 @@ public class AuctionClient {
 		dsa.initSign(kp.getPrivate());
 		dsa.update(sign);
 		byte[] signatureBytes = dsa.sign();
-		System.out.println("\nSignature: " + encoder.encode(signatureBytes));
-		System.out.println("???");
+
+		FileOutputStream sigfos = new FileOutputStream("sig");
+		sigfos.write(signatureBytes);
+		sigfos.close();
+
+		//hashjson.put("signature", signatureBytes.toString());
 
 		/*
 		dsa.initVerify(kp.getPublic());
@@ -500,7 +540,7 @@ public class AuctionClient {
 		String r1 = new String(dpac.getData());
 		JSONObject jo2 = new JSONObject(r1);
 		if(jo2.getInt("ack") == 0) {
-			System.out.println("\nIncorrect cryptopuzzle or invalid auction.");
+			System.out.println("\nInvalid auction.");
 		}
 		else if(checkseq(jo2.getInt("seq")) && jo2.getInt("ack") == 1) {
 			System.out.println("\nBid sent succesfully");
@@ -513,7 +553,14 @@ public class AuctionClient {
 	//Display all bids of an auction
 	public static void displayBids() throws IOException {
 		//List all auctions
-		listAuctions();
+		String s = listAuctions();
+		if(s.equals("")) {
+			System.out.println("\nNo available auctions.");
+			return;
+		}
+		else {
+			System.out.println(s);
+		}
 
 		//Send data to repository
 		DatagramSocket ds = new DatagramSocket();
@@ -550,7 +597,9 @@ public class AuctionClient {
 		JSONObject data = new JSONObject();
 		byte[] bytes = name.getBytes();
 		byte[] cipheredcreator = cipherAES(bytes, mansession);
+		//byte[] cipheredkey2 = cipherRSA(mansession.getEncoded(), managerPublicKey);
 		data.put("creatorid", encoder.encodeToString(cipheredcreator));
+		//data.put("key", encoder.encodeToString(cipheredkey2));
 		data.put("seq", seq);
 		data.put("action", "checkoutcome");
 		InetAddress ia = InetAddress.getLocalHost();
@@ -558,7 +607,7 @@ public class AuctionClient {
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 9000);
 		ds.send(dp);
 
-		byte[] b1 = new byte[1024];
+		byte[] b1 = new byte[2048];
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
 		ds.receive(dp1);
 		String response = new String(dp1.getData());
@@ -612,7 +661,7 @@ public class AuctionClient {
 		System.out.println(jsonObject.get("options"));
 
 		JSONObject data1 = new JSONObject();
-		System.out.println("\nWhich client do you wish to check?");
+		System.out.println("Which client do you wish to check?");
 		System.out.print("> ");
 		int choice = sc.nextInt();
 		data1.put("creatorid", encoder.encodeToString(cipheredcreator));
@@ -629,7 +678,10 @@ public class AuctionClient {
 		String line = new String(dp3.getData());
 		JSONObject jo = new JSONObject(line);
 		if(checkseq(jo.getInt("seq"))) {
-			System.out.println(jo.get("bids"));
+			if(jo.get("bids").equals(""))
+				System.out.println("\nThe client has made no bids.");
+			else 
+				System.out.println("\n" + jo.get("bids"));
 		}
 	}
 
@@ -735,6 +787,7 @@ public class AuctionClient {
 	}
 
 	static boolean checkseq(int i) {
+		System.out.println(i + " - " + seq);
 		if(i == seq + 1) {
 			seq++;
 			return true;

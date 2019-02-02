@@ -280,7 +280,7 @@ public class AuctionRepository {
 		else if(jsonObject.get("action").equals("list")) {
 			JSONObject data = new JSONObject();
 			data.put("seq", jsonObject.getInt("seq") + 1);
-			String list = "\n";
+			String list = "";
 			for(int i = 0; i < auctions.size(); i++) {
 				if(auctions.get(i).type.equals("blind")) {
 					list += "Open - Auction number: " + auctions.get(i).id + " | Name: " + auctions.get(i).name + " | Description: " + auctions.get(i).description + " | Type: Blind Auction\n";
@@ -328,7 +328,7 @@ public class AuctionRepository {
 			String list = "";
 			JSONObject data = new JSONObject();
 			for(int i = 0; i < auctions.size(); i++) {
-				if(auctions.get(i).type.equals("blind")) {
+				if(auctions.get(i).type.equals("blind") && auctions.get(i).creator.equals(jsonObject.getString("creatorid"))) {
 					list += "Auction number: " + auctions.get(i).id + " | Name: " + auctions.get(i).name + " | Description: " + auctions.get(i).description + " | Type: Blind Auction\n";
 				}
 				else {
@@ -364,30 +364,38 @@ public class AuctionRepository {
 			ds.receive(respp);
 			String r = new String(respp.getData());
 			JSONObject jo = new JSONObject(r);
+			if(jo.getInt("error") == 1) 
+				return;
+
 			byte[] decipheredkey = decipherRSA(decoder.decode(jo.getString("key")), privateKey);
 			//System.out.println(encoder.encodeToString(decipheredkey));
 			SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
 			//System.out.println(encoder.encodeToString(originalKey.getEncoded()));
 			byte[] decipheredHash = decipherAES(decoder.decode(jo.getString("hash")), originalKey);
 			String s = new String(decipheredHash);
+			jo.remove("key");
+			jo.remove("hash");
 
 			//faltam coisas 
 			boolean ver = false;
 			int auction = jo.getInt("auction");
 			for(int i = 0; i < auctions.size(); i++) {
-				//|| !jo.get("creatorid").equals(auctions.get(i).creator)
-				if(i == auction ) {
+				/*if(jo.get("creatorid").equals(auctions.get(i).creator)) {
+					ver = true;
+					break;
+				}*/
+				System.out.println(i + " - " + auction);
+				if(auctions.get(i).id == auction && !jo.get("creatorid").equals(auctions.get(i).creator)) {
 					jo.put("type", auctions.get(i).type);
-					if(auctions.get(i).type.equals("ascending")) {
-						jo.put("prevbid", auctions.get(i).getLatestBlock().data);
-					}
-					else 
-						jo.put("prevbid", "unavailable");
+					jo.put("prevbid", auctions.get(i).getLatestBlock().data);
+					jo.put("auction", auctions.get(i).id);
+					jo.put("bidder", jo.get("creatorid"));
+					ver = false;
+					break;
 				}
 				else
 					ver = true;
 			}
-
 			//Cryptopuzzle verification!
 			if(!s.substring(0, difficulty).equals("0000") || ver == true) {
 				JSONObject obj = new JSONObject();
@@ -397,6 +405,7 @@ public class AuctionRepository {
 				InetAddress inet = InetAddress.getLocalHost();
 				DatagramPacket d = new DatagramPacket(o, o.length, inet, dp.getPort());
 				ds.send(d);
+				return;
 			}
 
 			//to rep
@@ -412,7 +421,7 @@ public class AuctionRepository {
 			String r2 = new String(resprman.getData());
 			JSONObject jobj = new JSONObject(r2);
 			
-			if(jobj.get("value").equals("error")) {
+			if(jobj.getInt("error") == 1) {
 				JSONObject obj = new JSONObject();
 				obj.put("ack", 2);
 				obj.put("seq", jo.getInt("seq") + 1);
@@ -422,12 +431,12 @@ public class AuctionRepository {
 				ds.send(d);
 			}
 			else {
-			int index = 0;
+				int index = 0;
 				for(int i = 0; i < auctions.size(); i++) {
-					if(i == auction) {
+					if(auctions.get(i).id == auction) {
 						index = auctions.get(i).getLatestBlock().index;
 						index++;
-						auctions.get(i).addBlock(new Block(index, jobj.get("value").toString(), jobj.getString("timestamp"), "", jobj.getString("creatorid")));
+						auctions.get(i).addBlock(new Block(index, jobj.getString("value"), jobj.getString("timestamp"), "", jobj.getString("bidder")));
 						System.out.println(auctions.get(i).getLatestBlock().previousHash);
 						auctions.get(i).isChainValid();
 					}
@@ -447,17 +456,23 @@ public class AuctionRepository {
 		//Terminate an auction
 		else if(jsonObject.get("action").equals("terminate")) {
 			JSONObject data = new JSONObject();
+			boolean ver = false;
 			for(int i = 0; i < auctions.size(); i++) {
-				if(i == jsonObject.getInt("position")) {
+				System.out.println(i + " - " + jsonObject.getInt("position"));
+				if(auctions.get(i).id == jsonObject.getInt("position")) {
 					if(auctions.get(i).creator.equals(jsonObject.get("creatorid"))) {
 						terminated.add(auctions.get(i));
 						auctions.remove(i);
 						data.put("ack", 1);
+						ver = false;
+						break;
 					}
 				}
 				else
-					data.put("ack", 0);
+					ver = true;
 			}
+			if(ver == true)
+				data.put("ack", 0);
 			data.put("seq", jsonObject.getInt("seq") + 1);
 			byte[] o = data.toString().getBytes();
 			InetAddress ia = InetAddress.getLocalHost();
@@ -475,7 +490,7 @@ public class AuctionRepository {
 					obj.put("bids", "none");
 				}
 				else {
-					if(i == auction) {
+					if(auctions.get(i).id == auction) {
 						bids = auctions.get(i).printChain();
 						obj.put("bids", bids.toString());
 					}
@@ -492,8 +507,10 @@ public class AuctionRepository {
 			String list = "\n";
 			for(int i = 0; i < terminated.size(); i++) {
 				for(int j = 0; j < terminated.get(i).chain.size(); j++) {
+					System.out.println(terminated.get(i).chain.get(j).bidder + " - " + jsonObject.get("creatorid"));
 					if(terminated.get(i).chain.get(j).bidder.equals(jsonObject.get("creatorid"))) {
 						list += "Auction number: " + terminated.get(i).id + " | Description: " + terminated.get(i).description + "\n";
+						break;
 					}
 				}
 			}
@@ -508,14 +525,25 @@ public class AuctionRepository {
 
 		else if(jsonObject.get("action").equals("checkcont")) {
 			JSONObject obj = new JSONObject();
+			int options = 0;
 			for(int i = 0; i < terminated.size(); i++) {
-				if(terminated.get(i).id == jsonObject.getInt("auction")) {
+				if(terminated.get(i).id == jsonObject.getInt("auction") && terminated.get(i).type.equals("ascending")) {
 					obj.put("bidder", terminated.get(i).getLatestBlock().bidder);
 					obj.put("bid", terminated.get(i).getLatestBlock().data);
 					obj.put("type", terminated.get(i).type);
 				}
+				else {
+					obj.put("type", terminated.get(i).type);
+					for(int j = 1; j < terminated.get(i).chain.size(); j++) {
+						obj.put("bidder" + j, terminated.get(i).chain.get(j).bidder);
+						obj.put("value" + j, terminated.get(i).chain.get(j).data);
+						options++;
+					}
+					obj.put("options", options);
+				}
 			}
 			obj.put("seq", jsonObject.getInt("seq") + 1);
+			System.out.println(obj.toString());
 			byte[] b1 = obj.toString().getBytes();
 			InetAddress ia = InetAddress.getLocalHost();
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
@@ -523,7 +551,7 @@ public class AuctionRepository {
 		}
 
 		else if(jsonObject.get("action").equals("clientcont")) {
-			String s = "\n";
+			String s = "";
 			for(int j = 0; j < auctions.size(); j++) {
 				if(!auctions.get(j).type.equals("blind")) {
 					for(int k = 0; k < auctions.get(j).chain.size(); k++) {
