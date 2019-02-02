@@ -1,2 +1,0 @@
-{"creatorid":2,"action":"bid","value":100,"timestamp":"Thu Dec 13 00:52:23 WET 2018","auction":0}
-{"creatorid":2,"action":"bid","value":50,"timestamp":"Thu Dec 13 00:52:58 WET 2018","auction":2}

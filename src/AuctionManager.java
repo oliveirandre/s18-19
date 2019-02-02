@@ -64,74 +64,42 @@ public class AuctionManager {
 	
 	private static int counter = 0;
 	private static int instcounter = 0;
-	private static String path = "certs/man.p12";
+	private static String path = "certs/man.crt";
 	private static Principal issuerman = null;
 	static List<Client> clients = new ArrayList<Client>();
 	private static PublicKey publicKey = null;
 	private static PrivateKey privateKey = null;
 	private static SecretKey secKey = null;
+	private static Principal p = null;
+	private static KeyPair kp = null;
 	private static PublicKey repositoryPublicKey = null;
 	private static HashMap<String, String> bids = new HashMap<String, String>();
 	private static HashMap<Integer, HashMap<String, String>> blind = new HashMap<Integer, HashMap<String, String>>();
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
-	public static void main(String[] args) throws KeyStoreException, UnrecoverableKeyException, UnrecoverableEntryException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
-		generateKeys();	
+	public static void main(String[] args) throws SignatureException, KeyStoreException, UnrecoverableKeyException, UnrecoverableEntryException, CertificateException, IOException, SignatureException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		
+		FileInputStream fin = new FileInputStream("certs/man.crt");
+		CertificateFactory f = CertificateFactory.getInstance("X.509");
+		X509Certificate cert = (X509Certificate) f.generateCertificate(fin);
+		publicKey = cert.getPublicKey();
+		p = cert.getIssuerDN();
+
 		//read own certificate
 		KeyStore p12 = KeyStore.getInstance("pkcs12");
-        p12.load(new FileInputStream(path), "".toCharArray());
-		Enumeration e = p12.aliases();
-        while (e.hasMoreElements()) {
-            String alias = (String) e.nextElement();
-            X509Certificate c = (X509Certificate) p12.getCertificate(alias);
-            issuerman = c.getIssuerDN();
-		}
-		
+        p12.load(new FileInputStream("certs/man.p12"), "".toCharArray());
+		privateKey = (PrivateKey) p12.getKey("1", "".toCharArray());
+
 		//Send certificate path to repository
 		DatagramSocket ds = new DatagramSocket(8000);
 		JSONObject data = new JSONObject();
 		InetAddress ia = InetAddress.getLocalHost();
 		data.put("action", "serverconnection");
 		data.put("path", path);
-		String encodedKey = Base64.getEncoder().encodeToString(publicKey.getEncoded());
-		data.put("manpubkey", encodedKey);
 		byte[] b1 = data.toString().getBytes();
 		DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
 		ds.send(dp1);	
-
-		char[] password = "".toCharArray();
-		String alias = "1";
-		PrivateKey privateKey1 = (PrivateKey) p12.getKey(alias, password);
-		PrivateKeyEntry privateKeyEntry = (PrivateKeyEntry) p12.getEntry(alias, new KeyStore.PasswordProtection(password));
-		//System.out.println(encoder.encodeToString(privateKey1.getEncoded()));
-
-		//Generate public and private keys
-		
-		
-		/*Signature dsa = Signature.getInstance("SHA1withDSA", "SUN");
-		dsa.initSign(privateKey);
-		FileInputStream fis = new FileInputStream(args[0]);
-		BufferedInputStream bufin = new BufferedInputStream(fis);
-		byte[] buffer = new byte[1024];
-		int len;
-		while ((len = bufin.read(buffer)) >= 0) {
-			dsa.update(buffer, 0, len);
-		};
-		bufin.close();
-		byte[] realSig = dsa.sign();
-
-		/* save the signature in a file */
-		/*FileOutputStream sigfos = new FileOutputStream("sig");
-		sigfos.write(realSig);
-		sigfos.close();
-
-		/* save the public key in a file */
-		/*byte[] key = publicKey.getEncoded();
-		FileOutputStream keyfos = new FileOutputStream("manepk");
-		keyfos.write(key);
-		keyfos.close();*/
 
 		while(true) {
 			byte[] b = new byte[1024];
@@ -143,24 +111,23 @@ public class AuctionManager {
 		}
 	}
 
-	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws KeyStoreException, CertificateException, IOException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException {
+	static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws SignatureException, KeyStoreException, CertificateException, IOException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException {
 		//Receive repository's public key
 		if(jsonObject.get("action").equals("serverconnection")) {
-			KeyStore p12 = KeyStore.getInstance("pkcs12");
-			p12.load(new FileInputStream(jsonObject.getString("path")), "".toCharArray());
-			Enumeration e = p12.aliases();
-			Principal issuer = null;
-			while (e.hasMoreElements()) {
-				String alias = (String) e.nextElement();
-				X509Certificate c = (X509Certificate) p12.getCertificate(alias);
-				issuer = c.getIssuerDN();
+
+			FileInputStream f = new FileInputStream(jsonObject.getString("path"));
+			CertificateFactory cf = CertificateFactory.getInstance("X.509");
+			X509Certificate c = (X509Certificate) cf.generateCertificate(f);
+			Principal issuer = c.getIssuerDN();
+
+			if(issuer.equals(p)) {
+				repositoryPublicKey = c.getPublicKey();
+				System.out.println("Servers are connected!");
 			}
-			if(issuerman.equals(issuer)) {
-				repositoryPublicKey = getKey(jsonObject.getString("reppubkey"));
-				System.out.println("Servers are connected successfuly");
-			}
-			else
+			else { 
 				System.out.println("Repository not trustable!");
+				System.exit(0);
+			}
 		}
 		
 		//Client connection
@@ -254,6 +221,18 @@ public class AuctionManager {
 					jsonObject.put("error", 0);
 				}
 			}
+			
+			JSONObject jo = jsonObject;
+
+			byte[] sign = jo.toString().getBytes();
+			//sign the bid
+			/*Signature dsa = Signature.getInstance("MD5withRSA");
+			dsa.initSign(kp.getPrivate());
+			dsa.update(sign);
+			byte[] signatureBytes = dsa.sign();
+			FileOutputStream sigfos = new FileOutputStream("Receipts/man-" + jo.get("creatorid") + jo.getInt("bidnumber") + ".txt");
+			sigfos.write(signatureBytes);
+			sigfos.close();*/
 
 			byte[] b = jsonObject.toString().getBytes();
 			InetAddress inet = InetAddress.getLocalHost();
@@ -399,7 +378,7 @@ public class AuctionManager {
 		//RSA - Public and Private Keys
 		KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
 		kpg.initialize(2048);
-		KeyPair kp = kpg.generateKeyPair();
+		kp = kpg.generateKeyPair();
 		publicKey = kp.getPublic();
 		privateKey = kp.getPrivate();
 	}

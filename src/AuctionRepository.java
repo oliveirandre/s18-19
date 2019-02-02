@@ -10,6 +10,7 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+import java.security.PrivateKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -32,6 +33,12 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Enumeration;
 import java.security.Principal;
+import java.security.InvalidKeyException;
+import java.security.Signature;
+import java.security.SignatureException;
+import java.security.UnrecoverableKeyException;
+import java.security.NoSuchProviderException;
+import java.security.cert.CertificateFactory;
 
 
 class ClientR {
@@ -162,28 +169,27 @@ public class AuctionRepository {
 	static List<Blockchain> auctions = new ArrayList<Blockchain>();
 	static List<Blockchain> terminated = new ArrayList<Blockchain>();
 	static Principal issuerrep = null;
-	static String path = "certs/rep.p12";
+	static String path = "certs/rep.crt";
 	private static Key managerPublicKey = null;
 	private static SecretKey secKey = null;
 	private static Key publicKey = null;
+	private static KeyPair kp = null;
 	private static Key privateKey = null;
+	private static Principal p = null;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
-	public static void main(String[] args) throws  KeyStoreException, CertificateException,IOException, NoSuchAlgorithmException, InvalidKeyException, JSONException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+	public static void main(String[] args) throws UnrecoverableKeyException, SignatureException, KeyStoreException, CertificateException,IOException, NoSuchAlgorithmException, InvalidKeyException, JSONException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		
-		//read own certificate
 		KeyStore p12 = KeyStore.getInstance("pkcs12");
-		p12.load(new FileInputStream(path), "".toCharArray());
-		Enumeration e = p12.aliases();
-		while (e.hasMoreElements()) {
-			String alias = (String) e.nextElement();
-			X509Certificate c = (X509Certificate) p12.getCertificate(alias);
-			issuerrep = c.getIssuerDN();
-		}
+        p12.load(new FileInputStream("certs/rep.p12"), "".toCharArray());
+		privateKey = (PrivateKey) p12.getKey("1", "".toCharArray());
 
-		//Generate public and private keys
-		generateKeys();
+		FileInputStream fin = new FileInputStream("certs/rep.crt");
+		CertificateFactory f = CertificateFactory.getInstance("X.509");
+		X509Certificate cert = (X509Certificate) f.generateCertificate(fin);
+		publicKey = cert.getPublicKey();
+		p = cert.getIssuerDN();
 
 		DatagramSocket ds = new DatagramSocket(9000);
 		while(true) {
@@ -196,38 +202,29 @@ public class AuctionRepository {
 		}
 	}
 	
-	public static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException, JSONException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
+	public static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws KeyStoreException, SignatureException, CertificateException, IOException, NoSuchAlgorithmException, JSONException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		//Connection between servers
 		if(jsonObject.get("action").equals("serverconnection")) {
+			FileInputStream f = new FileInputStream(jsonObject.getString("path"));
+			CertificateFactory cf = CertificateFactory.getInstance("X.509");
+			X509Certificate c = (X509Certificate) cf.generateCertificate(f);
+			Principal issuer = c.getIssuerDN();
 
-			KeyStore p12 = KeyStore.getInstance("pkcs12");
-			p12.load(new FileInputStream(jsonObject.getString("path")), "".toCharArray());
-			Enumeration e = p12.aliases();
-			Principal issuer = null;
-			while (e.hasMoreElements()) {
-				String alias = (String) e.nextElement();
-				X509Certificate c = (X509Certificate) p12.getCertificate(alias);
-				issuer = c.getIssuerDN();
-			}
-			
-			//verificar se foram certificados pelo mesmo CA
-			if(issuerrep.equals(issuer)) {
-				//Receive manager's public key
-				managerPublicKey = getKey(jsonObject.getString("manpubkey"));
-				//Send repository's public key to manager
+			if(issuer.equals(p)) {
+				System.out.println("Manager is trustable!");
+				managerPublicKey = c.getPublicKey();
 				JSONObject data = new JSONObject();
 				data.put("path", path);
 				data.put("action", "serverconnection");
-				String repPubKey = encoder.encodeToString(publicKey.getEncoded());
-				data.put("reppubkey", repPubKey);
 				byte[] b1 = data.toString().getBytes();
 				InetAddress ia = InetAddress.getLocalHost();
 				DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
 				ds.send(dp1);	
 			}
-			else {
+			else { 
 				System.out.println("Manager not trustable!");
-			}			
+				System.exit(0);
+			}
 		}
 		
 		//New client connection
@@ -359,7 +356,7 @@ public class AuctionRepository {
 			ds.send(dp3);
 
 			//Criptopuzzle received 
-			byte[] resp = new byte[1024];
+			byte[] resp = new byte[2048];
 			DatagramPacket respp = new DatagramPacket(resp, resp.length);
 			ds.receive(respp);
 			String r = new String(respp.getData());
@@ -407,6 +404,16 @@ public class AuctionRepository {
 				ds.send(d);
 				return;
 			}
+			
+			//sign the bid
+			/*byte[] sign = jo.toString().getBytes();
+			Signature dsa = Signature.getInstance("MD5withRSA");
+			dsa.initSign(kp.getPrivate());
+			dsa.update(sign);
+			byte[] signatureBytes = dsa.sign();
+			FileOutputStream sigfos = new FileOutputStream("Receipts/rep-" + jo.get("creatorid") + jo.getInt("bidnumber") + ".txt");
+			sigfos.write(signatureBytes);
+			sigfos.close();*/
 
 			//to rep
 			byte[] man = jo.toString().getBytes();
@@ -504,7 +511,7 @@ public class AuctionRepository {
 		}
 
 		else if(jsonObject.get("action").equals("checkoutcome")) {
-			String list = "\n";
+			String list = "";
 			for(int i = 0; i < terminated.size(); i++) {
 				for(int j = 0; j < terminated.get(i).chain.size(); j++) {
 					System.out.println(terminated.get(i).chain.get(j).bidder + " - " + jsonObject.get("creatorid"));
@@ -588,11 +595,6 @@ public class AuctionRepository {
 		secKey = generator.generateKey();
 
 		//RSA - Public and Private Keys
-		KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-		kpg.initialize(2048);
-		KeyPair kp = kpg.generateKeyPair();
-		publicKey = kp.getPublic();
-		privateKey = kp.getPrivate();		
 	}
 	
 	//Cipher with symmetric key

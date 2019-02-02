@@ -25,46 +25,23 @@ import org.json.JSONObject;
 import org.omg.CORBA.DynAnyPackage.Invalid;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.security.InvalidKeyException;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.NoSuchProviderException;
 import java.io.FileOutputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.BufferedInputStream;
 
 /*
- * -> As auctions têm de ser guardadas no AuctionRepository, e não no AuctionManager.
- * O cliente comunica com ambos ou só com o manager? Isto implica saber se o repositório
- * é preenchido pelo cliente ou pelo manager, deixando o manager como um "man in the middle"
- * em quase todos os pedidos do cliente, ou se o cliente comunica com o repositório
- * diretamente.
  *
  * -> Que restrições podem ter cada auction?
- *
- * -> Cada cliente tem que ter um id único que o identifique, para que cada auction possa
- * estar associada ao cliente que a criou. Este id tem que ser passado ao servidor no json,
- * por exemplo: jsonObject.put("creatorid", id);
- *
- * -> Um cliente não pode terminar uma auction que não foi criada por ele mesmo.
- *
- * -> Como implementar os multi clientes?
- *
- * -> Como tratamos cada bid numa auction? O json pode ter vários campos com o mesmo id
- * (neste caso vários valores para bid)? E podemos associar cada bid a cada cliente que a fez?
- * É relevante não para os clientes, mas para o servidor para depois ser possível determinar
- * quem fez a maior bid.
  *
  * -> Será interessante haver outra forma de terminar uma auction para além de esta terminar
  * apenas quando o seu criador a termine? Por exemplo haver um timer.
  *
- * -> Uma action pode ter um campo de description, para ser mais fácil a identificação de cada
- * auction (por exemplo, uma auction de quê em concreto). y
- *
- * -> Quando uma bid é criada tem de ser resolvido um criptopuzzle. y
- *
- * -> As bids são mandadas para o repositório, depois é validado pelo manager, e depois volta
- * para o repositório.
- * 
- * Cifragem e decifragem com chaves públicas e privadas.
  * MAC
  * SHA
  * Cartão de Cidadão
@@ -84,6 +61,8 @@ public class AuctionClient {
 	private static SecretKey repsession = null;
 	private static Key managerPublicKey = null;
 	private static Key repositoryPublicKey = null;
+	private static byte[] toSign = null;
+	private static int bidnumber = 1;
 	private static CC cc;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
@@ -116,6 +95,9 @@ public class AuctionClient {
 			}
 			else if(action == 7) {
 				checkOutcome();
+			}
+			else if(action == 8) {
+				receipt();
 			}
 			else if (action == 0) {
 				System.exit(0);
@@ -450,6 +432,7 @@ public class AuctionClient {
 		byte[] cipheredkey = cipherRSA(repsession.getEncoded(), repositoryPublicKey);
 		JSONObject hashjson = new JSONObject();
 		hashjson.put("action", "bid");
+		hashjson.put("bidnumber", bidnumber);
 		hashjson.put("seq", seq);
 		hashjson.put("hash", encoder.encodeToString(cipheredhash));
 		hashjson.put("key", encoder.encodeToString(cipheredkey));
@@ -486,18 +469,32 @@ public class AuctionClient {
 		hashjson.put("key2", encoder.encodeToString(cipheredkey2));
 		hashjson.put("timestamp", timestamp);
 		hashjson.put("auction", choice);
-		byte[] sign = hashjson.toString().getBytes();
+		//toSign = hashjson.toString().getBytes();
+
+
+		/*PrintWriter pw = new PrintWriter("Receipts/bid.txt");
+		pw.println("bid");
+		pw.close();
 
 		//sign the bid
-		
-		Signature dsa = Signature.getInstance("MD5withRSA");
+		/*Signature dsa = Signature.getInstance("SHA1withDSA", "SUN");
 		dsa.initSign(kp.getPrivate());
-		dsa.update(sign);
-		byte[] signatureBytes = dsa.sign();
 
-		FileOutputStream sigfos = new FileOutputStream("sig");
+		FileInputStream fis = new FileInputStream("Receipts/bid.txt");
+		BufferedInputStream bufin = new BufferedInputStream(fis);
+		byte[] buffer = new byte[1024];
+		int len;
+		while ((len = bufin.read(buffer)) >= 0) {
+			dsa.update(buffer, 0, len);
+		};
+		bufin.close();
+
+		byte[] signatureBytes = dsa.sign();
+		FileOutputStream sigfos = new FileOutputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
 		sigfos.write(signatureBytes);
-		sigfos.close();
+		sigfos.close();*/
+
+		//hashjson.put("toSign", toSign.toString());
 
 		//hashjson.put("signature", signatureBytes.toString());
 
@@ -544,10 +541,14 @@ public class AuctionClient {
 		}
 		else if(checkseq(jo2.getInt("seq")) && jo2.getInt("ack") == 1) {
 			System.out.println("\nBid sent succesfully");
+			bidnumber++;
 		}
 		else if(jo2.getInt("ack") == 2) {
 			System.out.println("\nBid is inferior to the previous one!");
 		}
+
+
+
 	}
 	
 	//Display all bids of an auction
@@ -613,6 +614,10 @@ public class AuctionClient {
 		String response = new String(dp1.getData());
 		JSONObject jsonObject = new JSONObject(response);
 		checkseq(jsonObject.getInt("seq"));
+		if(jsonObject.get("options").equals("")) {
+			System.out.println("\nYou haven't put a bid on an auction.");
+			return;
+		}
 		System.out.println(jsonObject.get("options"));
 
 		JSONObject data1 = new JSONObject();
@@ -683,6 +688,38 @@ public class AuctionClient {
 			else 
 				System.out.println("\n" + jo.get("bids"));
 		}
+	}
+
+	private static void receipt() throws NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, FileNotFoundException, IOException, SignatureException {
+	
+		// ----- VERIFY
+
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes, mansession);
+		FileInputStream sigfis = new FileInputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
+		byte[] sigToVerify = new byte[sigfis.available()]; 
+		sigfis.read(sigToVerify);
+		sigfis.close();
+
+		System.out.println("read signature successfully");
+
+		Signature sig = Signature.getInstance("SHA1withDSA", "SUN");
+		sig.initVerify(kp.getPublic());
+		FileInputStream datafis = new FileInputStream("Receipts/bid.txt");
+		BufferedInputStream bufin2 = new BufferedInputStream(datafis);
+
+		System.out.println("read data successfully");
+
+		byte[] buffer2 = new byte[1024];
+		int len2;
+		while (bufin2.available() != 0) {
+			len2 = bufin2.read(buffer2);
+			sig.update(buffer2, 0, len2);
+		};
+		bufin2.close();
+
+		boolean verifies = sig.verify(sigToVerify);
+		System.out.println("signature verifies: " + verifies);
 	}
 
 	public static int menu() {
@@ -787,7 +824,7 @@ public class AuctionClient {
 	}
 
 	static boolean checkseq(int i) {
-		System.out.println(i + " - " + seq);
+		//System.out.println(i + " - " + seq);
 		if(i == seq + 1) {
 			seq++;
 			return true;
