@@ -44,6 +44,8 @@ import java.security.Principal;
 import java.security.KeyStore.PrivateKeyEntry;
 import javax.crypto.spec.SecretKeySpec;
 import java.util.List;
+import java.util.Random;
+import java.nio.charset.*;
 
 class Client {
 
@@ -125,6 +127,15 @@ public class AuctionManager {
 
 			if(issuer.equals(p)) {
 				repositoryPublicKey = c.getPublicKey();
+				byte[] proven = decipherRSA(decoder.decode(jsonObject.getString("prove")), privateKey);
+				byte[] youprove = cipherRSA(proven, repositoryPublicKey);
+				jsonObject.remove("prove");
+				jsonObject.put("path", path);
+				jsonObject.put("prove", encoder.encodeToString(youprove));
+				byte[] b1 = jsonObject.toString().getBytes();
+				InetAddress ia = InetAddress.getLocalHost();
+				DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 9000);
+				ds.send(dp1);
 				System.out.println("Servers are connected!");
 			}
 			else { 

@@ -37,7 +37,9 @@ import java.security.Signature;
 import java.security.SignatureException;
 import java.security.UnrecoverableKeyException;
 import java.security.NoSuchProviderException;
+import java.util.Random;
 import java.security.cert.CertificateFactory;
+import java.nio.charset.*;
 
 
 class ClientR {
@@ -183,7 +185,7 @@ public class AuctionRepository {
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
 	public static void main(String[] args) throws UnrecoverableKeyException, SignatureException, KeyStoreException, CertificateException,IOException, NoSuchAlgorithmException, InvalidKeyException, JSONException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
-		
+
 		generateKeys();
 
 		KeyStore p12 = KeyStore.getInstance("pkcs12");
@@ -206,10 +208,40 @@ public class AuctionRepository {
 			readCommand(jsonObject, dp, ds);
 		}
 	}
+
+	static String getAlphaNumericString(int n) 
+    { 
+  
+        // chose a Character random from this String 
+        String AlphaNumericString = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                    + "0123456789"
+                                    + "abcdefghijklmnopqrstuvxyz"; 
+  
+        // create StringBuffer size of AlphaNumericString 
+        StringBuilder sb = new StringBuilder(n); 
+  
+        for (int i = 0; i < n; i++) { 
+  
+            // generate a random number between 
+            // 0 to AlphaNumericString variable length 
+            int index 
+                = (int)(AlphaNumericString.length() 
+                        * Math.random()); 
+  
+            // add Character one by one in end of sb 
+            sb.append(AlphaNumericString 
+                          .charAt(index)); 
+        } 
+  
+        return sb.toString(); 
+    } 
 	
 	public static void readCommand(JSONObject jsonObject, DatagramPacket dp, DatagramSocket ds) throws KeyStoreException, SignatureException, CertificateException, IOException, NoSuchAlgorithmException, JSONException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchPaddingException {
 		//Connection between servers
 		if(jsonObject.get("action").equals("serverconnection")) {
+
+			String generatedString = getAlphaNumericString(10);
+
 			FileInputStream f = new FileInputStream(jsonObject.getString("path"));
 			CertificateFactory cf = CertificateFactory.getInstance("X.509");
 			X509Certificate c = (X509Certificate) cf.generateCertificate(f);
@@ -219,12 +251,26 @@ public class AuctionRepository {
 				System.out.println("Manager is trustable!");
 				managerPublicKey = c.getPublicKey();
 				JSONObject data = new JSONObject();
+				byte[] toprove = cipherRSA(generatedString.getBytes(), managerPublicKey);
 				data.put("path", path);
+				data.put("prove", encoder.encodeToString(toprove));
 				data.put("action", "serverconnection");
 				byte[] b1 = data.toString().getBytes();
 				InetAddress ia = InetAddress.getLocalHost();
 				DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, 8000);
 				ds.send(dp1);	
+
+				byte[] b2 = new byte[1024];
+				DatagramPacket dp2 = new DatagramPacket(b2, b2.length);
+				ds.receive(dp2);
+				String response1 = new String(dp2.getData());
+				JSONObject jsonObject2 = new JSONObject(response1);
+
+				byte[] val = decipherRSA(decoder.decode(jsonObject2.getString("prove")), privateKey);
+
+				if(new String(val).equals(generatedString)) {
+					System.out.println("Servers are connected.");
+				}
 			}
 			else { 
 				System.out.println("Manager not trustable!");
