@@ -73,7 +73,7 @@ public class AuctionClient {
 	private static String toSign = "";
 	private static String signed = "";
 	private static int bidnumber = 1;
-	private static CC cc;
+	private static SmartCard cc;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
@@ -121,7 +121,7 @@ public class AuctionClient {
 		//Generate public and private keys
 		
 		try {
-			cc = new CC();
+			cc = new SmartCard();
 		} catch (Exception e) {
 			System.err.print(e);
 			return;
