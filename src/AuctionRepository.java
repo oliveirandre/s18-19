@@ -27,7 +27,6 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.spec.SecretKeySpec;
 import java.security.KeyStore;
 import java.io.*;
-import com.sun.javafx.util.TempState;
 import java.security.KeyStoreException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
@@ -108,20 +107,24 @@ class Blockchain {
 	int i = 0;
 	String type;
 	String name;
-	
-	public Blockchain(int id, String description, String creator, String type, String name) throws NoSuchAlgorithmException {
-		this.chain.add(createGenesis());
+	String minBid;
+	String maxUserBids;
+
+	public Blockchain(int id, String description, String creator, String type, String name, String minBid, String maxUserBids) throws NoSuchAlgorithmException {
 		this.difficulty = 0;
 		this.id = id;
 		this.description = description;
 		this.creator = creator;
 		this.type = type;
 		this.name = name;
+		this.minBid = minBid;
+		this.maxUserBids=maxUserBids;
+		this.chain.add(createGenesis());
 	}
 	
 	public Block createGenesis() throws NoSuchAlgorithmException {
 		Date timestamp = new Date();
-		return new Block(i, "0", timestamp.toString(), "0", "");
+		return new Block(i, minBid, timestamp.toString(), "0", "");
 	}
 	
 	public Block getLatestBlock() {
@@ -261,7 +264,8 @@ public class AuctionRepository {
 		//New auction
 		if(jsonObject.get("action").equals("create")) { 
 			//Data sent by the manager after auction being processed
-			Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), jsonObject.getString("creatorid"), jsonObject.getString("type"), jsonObject.getString("name"));
+			System.out.print(jsonObject.getString("minBid"));
+			Blockchain blockChain = new Blockchain(blockchainid, jsonObject.getString("description"), jsonObject.getString("creatorid"), jsonObject.getString("type"), jsonObject.getString("name"), jsonObject.getString("minBid"), jsonObject.getString("maxBids"));
 			blockchainid++;
 			auctions.add(blockChain);
 			System.out.println("Genesis Block Hash of Blockchain " + blockChain.id + ": \n" + blockChain.getLatestBlock().hash);
@@ -383,11 +387,19 @@ public class AuctionRepository {
 					break;
 				}*/
 				System.out.println(i + " - " + auction);
+				int numBid=0;
 				if(auctions.get(i).id == auction && !jo.get("creatorid").equals(auctions.get(i).creator)) {
+					for(int k = 0; k < auctions.get(i).chain.size(); k++) {
+						if(auctions.get(i).chain.get(k).bidder.equals(jo.get("creatorid"))){
+							numBid++;
+						}
+					}
 					jo.put("type", auctions.get(i).type);
 					jo.put("prevbid", auctions.get(i).getLatestBlock().data);
 					jo.put("auction", auctions.get(i).id);
 					jo.put("bidder", jo.get("creatorid"));
+					jo.put("numBid", String.valueOf(numBid));
+					jo.put("maxBids", auctions.get(i).maxUserBids);
 					ver = false;
 					break;
 				}
@@ -432,6 +444,15 @@ public class AuctionRepository {
 			if(jobj.getInt("error") == 1) {
 				JSONObject obj = new JSONObject();
 				obj.put("ack", 2);
+				obj.put("seq", jo.getInt("seq") + 1);
+				byte[] o = obj.toString().getBytes();
+				InetAddress inet = InetAddress.getLocalHost();
+				DatagramPacket d = new DatagramPacket(o, o.length, inet, dp.getPort());
+				ds.send(d);
+			}
+			else if(jobj.getInt("error") == 2){
+				JSONObject obj = new JSONObject();
+				obj.put("ack", 3);
 				obj.put("seq", jo.getInt("seq") + 1);
 				byte[] o = obj.toString().getBytes();
 				InetAddress inet = InetAddress.getLocalHost();

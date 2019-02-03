@@ -22,7 +22,6 @@ import javax.crypto.SecretKey;
 import javax.lang.model.util.ElementScanner6;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.omg.CORBA.DynAnyPackage.Invalid;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -69,7 +68,7 @@ public class AuctionClient {
 	private static Key repositoryPublicKey = null;
 	private static byte[] toSign = null;
 	private static int bidnumber = 1;
-	private static CC cc;
+	//private static CC cc;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
@@ -242,6 +241,7 @@ public class AuctionClient {
 		System.out.print("> ");
 		if(sc.hasNextInt()) {
 			int type = sc.nextInt();
+			sc.nextLine();
 			if(type == 1) {
 				data.put("type", "ascending");
 			}
@@ -252,6 +252,16 @@ public class AuctionClient {
 				System.out.println("\nInvalid option!");
 				return;
 			}
+
+			System.out.print("Minimum Bid ->");
+			int minBid = sc.nextInt();
+			data.put("minBid", String.valueOf(minBid));
+			System.out.print("Max Bids per user ->");
+			int maxBid = sc.nextInt();
+			data.put("maxBids", String.valueOf(maxBid));
+
+
+
 		}
 		else {
 			System.out.println("\nInvalid option!");
@@ -558,6 +568,9 @@ public class AuctionClient {
 		}
 		else if(jo2.getInt("ack") == 2) {
 			System.out.println("\nBid is inferior to the previous one!");
+		}
+		else if(jo2.getInt("ack") == 3) {
+			System.out.println("\nMax Bids amount already reached!");
 		}
 
 

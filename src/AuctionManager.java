@@ -212,8 +212,11 @@ public class AuctionManager {
 				byte[] decipheredvalue = decipherAES(decoder.decode(jsonObject.getString("value")), originalKey);
 				//byte[] decipheredbidder = decipherAES(decoder.decode(jsonObject.getString("bidder")), originalKey);
 				String s = new String(decipheredvalue);
-				if(Integer.parseInt(jsonObject.getString("prevbid")) >= Integer.parseInt(s)) {
+				validBid valid = new validBid(jsonObject, Integer.parseInt(s));
+				if(!valid.validateValue()){
 					jsonObject.put("error", 1);
+				}else if(!valid.validateMaxBids()){
+					jsonObject.put("error", 2);
 				}
 				else {
 					jsonObject.remove("value");
@@ -505,5 +508,28 @@ public class AuctionManager {
 	        e.printStackTrace();
 		}
 		return null;
+	}
+}
+
+
+class validBid implements validateBid{
+	int bid;
+	JSONObject j;
+	public validBid(JSONObject j, int bid){
+		this.j=j;
+		this.bid=bid;
+	}
+	
+	 public boolean validateValue(){
+		if(Integer.parseInt(j.getString("prevbid")) > bid){
+			return false;
+		}
+		return true;
+	}
+	public boolean validateMaxBids(){
+		if(Integer.parseInt(j.getString("numBid")) == Integer.parseInt(j.getString("maxBids"))){
+			return false;
+		}
+		return true;
 	}
 }
