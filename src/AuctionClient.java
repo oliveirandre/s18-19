@@ -39,6 +39,7 @@ import java.security.spec.X509EncodedKeySpec;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.io.FileWriter;
 
 /*
  *
@@ -66,9 +67,10 @@ public class AuctionClient {
 	private static SecretKey repsession = null;
 	private static Key managerPublicKey = null;
 	private static Key repositoryPublicKey = null;
-	private static byte[] toSign = null;
+	private static String toSign = "";
+	private static String signed = "";
 	private static int bidnumber = 1;
-	//private static CC cc;
+	private static CC cc;
 	static Base64.Encoder encoder = Base64.getEncoder();
 	static Base64.Decoder decoder = Base64.getDecoder();
 	
@@ -114,14 +116,22 @@ public class AuctionClient {
 	
 	public static void main(String[] args) throws CertificateException, IOException, NoSuchAlgorithmException {
 		//Generate public and private keys
-		/*
+		
 		try {
 			cc = new CC();
 		} catch (Exception e) {
 			System.err.print(e);
 			return;
 		}
-		*/
+
+		if(!cc.provider) {
+			System.out.println("No citizen card detected!");
+			System.out.println("Exiting...");
+			System.exit(0);
+		}
+
+		System.out.println(cc.getCertString());
+
 		generateKeys();
 
 		//Set name for this client
@@ -466,10 +476,11 @@ public class AuctionClient {
 		int choice = sc.nextInt();
 		System.out.println("\nValue (must be an integer): ");
 		System.out.print("> ");
+		String val = "";
 		if(sc.hasNextInt()) {
 			int value = sc.nextInt();
 			hashjson.put("error", 0);
-			String val = String.valueOf(value);
+			val = String.valueOf(value);
 			byte[] bytesvalue = val.getBytes();
 			byte[] cipheredvalue = cipherAES(bytesvalue, mansession);
 			hashjson.put("value", encoder.encodeToString(cipheredvalue));
@@ -493,6 +504,14 @@ public class AuctionClient {
 		hashjson.put("timestamp", timestamp);
 		hashjson.put("auction", choice);
 		//toSign = hashjson.toString().getBytes();
+
+		toSign = "Bid of " + val + " made by " + name + " to auction number " + choice;
+		signed = cc.sign(toSign);
+		FileWriter f = new FileWriter("Receipts/" + encoder.encodeToString(cipheredcreator) + ".txt");
+        f.write( signed );
+		f.close();
+		
+		//hashjson.put("tosign", toSign);
 
 
 		/*PrintWriter pw = new PrintWriter("Receipts/bid.txt");
@@ -717,11 +736,9 @@ public class AuctionClient {
 	}
 
 	private static void receipt() throws NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, FileNotFoundException, IOException, SignatureException {
-	
-		// ----- VERIFY
+	// ----- VERIFY
 
-		byte[] bytes = name.getBytes();
-		byte[] cipheredcreator = cipherAES(bytes, mansession);
+		/*
 		FileInputStream sigfis = new FileInputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
 		byte[] sigToVerify = new byte[sigfis.available()]; 
 		sigfis.read(sigToVerify);
@@ -743,6 +760,33 @@ public class AuctionClient {
 			sig.update(buffer2, 0, len2);
 		};
 		bufin2.close();
+
+		boolean verifies = sig.verify(sigToVerify);
+		System.out.println("signature verifies: " + verifies);*/
+		byte[] bytes = name.getBytes();
+		byte[] cipheredcreator = cipherAES(bytes, mansession);
+
+		Signature sig = Signature.getInstance("SHA1withDSA", "SUN");
+		sig.initVerify((PublicKey) managerPublicKey);
+		sig.update(toSign.getBytes());
+		
+
+		FileInputStream sigfis = new FileInputStream("Receipts/man" + encoder.encodeToString(cipheredcreator) + ".txt");
+		byte[] sigToVerify = new byte[sigfis.available()]; 
+		sigfis.read(sigToVerify);
+		sigfis.close();
+
+		/*FileInputStream datafis = new FileInputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
+		BufferedInputStream bufin = new BufferedInputStream(datafis);
+
+		byte[] buffer = new byte[1024];
+		int len;
+		while (bufin.available() != 0) {
+			len = bufin.read(buffer);
+			sig.update(buffer, 0, len);
+		};
+
+		bufin.close();*/
 
 		boolean verifies = sig.verify(sigToVerify);
 		System.out.println("signature verifies: " + verifies);

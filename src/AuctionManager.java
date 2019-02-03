@@ -105,7 +105,7 @@ public class AuctionManager {
 		ds.send(dp1);	
 
 		while(true) {
-			byte[] b = new byte[1024];
+			byte[] b = new byte[2048];
 			DatagramPacket dp = new DatagramPacket(b, b.length);
 			ds.receive(dp);
 			String line = new String(dp.getData());

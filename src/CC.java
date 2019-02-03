@@ -1,4 +1,4 @@
-/*import java.util.Enumeration;
+import java.util.Enumeration;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.nio.charset.StandardCharsets;
@@ -8,7 +8,7 @@ import java.util.*;
 import java.security.cert.*;
 
 class CC {
-    String f = "./src/CitizenCard.cfg";
+    String f = "CitizenCard.cfg";
     Provider p;
     KeyStore ks;
     boolean provider = false;
@@ -228,4 +228,4 @@ class CC {
             e.printStackTrace();
         }
     }
-}*/
+}
