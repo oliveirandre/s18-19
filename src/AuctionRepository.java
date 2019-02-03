@@ -288,6 +288,19 @@ public class AuctionRepository {
 			DatagramPacket dp1 = new DatagramPacket(b1, b1.length, ia, dp.getPort());
 			ds.send(dp1);
 
+			byte[] prove = new byte[1024];
+			DatagramPacket dpr = new DatagramPacket(prove, prove.length);
+			ds.receive(dpr);
+			String resp = new String(dpr.getData());
+			JSONObject jo2 = new JSONObject(resp);
+			byte[] proven = decipherRSA(decoder.decode(jo2.getString("prove")), privateKey);
+			jo2.remove("prove");
+			jo2.put("prove", new String(proven));
+			jo2.put("seq", jo2.getInt("seq") + 1);
+			byte[] prov = jo2.toString().getBytes();
+			DatagramPacket pack = new DatagramPacket(prov, prov.length, ia, dp.getPort());
+			ds.send(pack);
+
 			byte[] b2 = new byte[1024];
 			DatagramPacket dp2 = new DatagramPacket(b2, b2.length);
 			ds.receive(dp2);

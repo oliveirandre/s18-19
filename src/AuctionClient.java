@@ -116,6 +116,33 @@ public class AuctionClient {
 			
 		}
 	}
+
+	static String getAlphaNumericString(int n) 
+    { 
+  
+        // chose a Character random from this String 
+        String AlphaNumericString = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                    + "0123456789"
+                                    + "abcdefghijklmnopqrstuvxyz"; 
+  
+        // create StringBuffer size of AlphaNumericString 
+        StringBuilder sb = new StringBuilder(n); 
+  
+        for (int i = 0; i < n; i++) { 
+  
+            // generate a random number between 
+            // 0 to AlphaNumericString variable length 
+            int index 
+                = (int)(AlphaNumericString.length() 
+                        * Math.random()); 
+  
+            // add Character one by one in end of sb 
+            sb.append(AlphaNumericString 
+                          .charAt(index)); 
+        } 
+  
+        return sb.toString(); 
+    } 
 	
 	public static void main(String[] args) throws CertificateException, IOException, NoSuchAlgorithmException {
 		//Generate public and private keys
@@ -177,6 +204,29 @@ public class AuctionClient {
 		X509Certificate c = (X509Certificate) cf.generateCertificate(fis);
 		managerPublicKey = c.getPublicKey();
 
+		String s2 = getAlphaNumericString(10);
+		byte[] toprove = cipherRSA(s2.getBytes(), managerPublicKey);
+		JSONObject prove = new JSONObject();
+		prove.put("seq", seq);
+		prove.put("prove", encoder.encodeToString(toprove));
+		byte[] bs = prove.toString().getBytes();
+		DatagramPacket dpr = new DatagramPacket(bs, bs.length, ia, 8000);
+		ds.send(dpr);
+
+		byte[] prov = new byte[1024];
+		DatagramPacket dprov = new DatagramPacket(prov, prov.length);
+		ds.receive(dprov);
+		String resp = new String(dprov.getData());
+		JSONObject jo2 = new JSONObject(resp);
+
+		//System.out.println(s2 + " - " + jo2.getString("prove"));
+		checkseq(jo2.getInt("seq"));
+		if(!s2.equals(jo2.getString("prove"))) {
+			System.out.println("Manager isn't trustworthy!");
+			System.exit(0);
+		}
+
+
 		//send ciphered data to manager
 		data.remove("seq");
 		data.put("seq", seq);
@@ -222,6 +272,29 @@ public class AuctionClient {
 		CertificateFactory cf2 = CertificateFactory.getInstance("X.509");
 		X509Certificate c2 = (X509Certificate) cf2.generateCertificate(fis2);
 		repositoryPublicKey = c2.getPublicKey();
+
+		String s4 = getAlphaNumericString(10);
+		byte[] toprove4 = cipherRSA(s4.getBytes(), repositoryPublicKey);
+		JSONObject prove4 = new JSONObject();
+		prove4.put("seq", seq);
+		prove4.put("prove", encoder.encodeToString(toprove4));
+		byte[] b4 = prove4.toString().getBytes();
+		DatagramPacket dpr4 = new DatagramPacket(b4, b4.length, ia, 9000);
+		ds.send(dpr4);
+
+		byte[] prov5 = new byte[1024];
+		DatagramPacket dprov5 = new DatagramPacket(prov5, prov5.length);
+		ds.receive(dprov5);
+		String resp5 = new String(dprov5.getData());
+		JSONObject jo5 = new JSONObject(resp5);
+
+		//System.out.println(s4 + " - " + jo5.getString("prove"));
+		checkseq(jo5.getInt("seq"));
+		if(!s4.equals(jo5.getString("prove"))) {
+			System.out.println("Repository isn't trustworthy!");
+			System.exit(0);
+		}
+
 
 		byte[] bytes2 = name.getBytes();
 		byte[] cipheredname2 = cipherAES(bytes2, repsession);
