@@ -198,7 +198,7 @@ public class AuctionRepository {
 
 		DatagramSocket ds = new DatagramSocket(9000);
 		while(true) {
-			byte[] b = new byte[1024];
+			byte[] b = new byte[2048];
 			DatagramPacket dp = new DatagramPacket(b, b.length);
 			ds.receive(dp);
 			String line = new String(dp.getData());
@@ -417,16 +417,6 @@ public class AuctionRepository {
 				ds.send(d);
 				return;
 			}
-			
-			//sign the bid
-			/*byte[] sign = jo.toString().getBytes();
-			Signature dsa = Signature.getInstance("MD5withRSA");
-			dsa.initSign(kp.getPrivate());
-			dsa.update(sign);
-			byte[] signatureBytes = dsa.sign();
-			FileOutputStream sigfos = new FileOutputStream("Receipts/rep-" + jo.get("creatorid") + jo.getInt("bidnumber") + ".txt");
-			sigfos.write(signatureBytes);
-			sigfos.close();*/
 
 			//to rep
 			byte[] man = jo.toString().getBytes();
@@ -480,6 +470,74 @@ public class AuctionRepository {
 				DatagramPacket d = new DatagramPacket(o, o.length, inet, dp.getPort());
 				ds.send(d);
 			}
+		}
+
+		else if(jsonObject.get("action").equals("sign")) {
+
+			JSONObject jo = jsonObject;
+
+			System.out.println("???");
+
+			//sign the bid
+			Signature dsa = Signature.getInstance("MD5withRSA");
+			dsa.initSign((PrivateKey) privateKey);
+			FileInputStream fis = new FileInputStream("Receipts/bids-" + jsonObject.get("creatorid") + ".txt");
+			BufferedInputStream bufin = new BufferedInputStream(fis);
+			byte[] buffer = new byte[1024];
+			int len;
+			while ((len = bufin.read(buffer)) >= 0) {
+				dsa.update(buffer, 0, len);
+			};
+			bufin.close();
+			byte[] signatureBytes = dsa.sign();
+			FileOutputStream sigfos = new FileOutputStream("Receipts/rep-" + jsonObject.get("creatorid") + ".txt");
+			sigfos.write(signatureBytes);
+			sigfos.close();
+
+			System.out.println("signed.");
+
+			InetAddress ia = InetAddress.getLocalHost();
+			byte[] b = jo.toString().getBytes();
+			DatagramPacket d = new DatagramPacket(b, b.length, ia, 8000);
+			ds.send(d);
+
+			byte[] rman = new byte[1024];
+			DatagramPacket resprman = new DatagramPacket(rman, rman.length);
+			ds.receive(resprman);
+			String r2 = new String(resprman.getData());
+
+			byte[] cl = r2.getBytes();
+			DatagramPacket r = new DatagramPacket(cl, cl.length, ia, dp.getPort());
+			ds.send(r);
+		}
+
+		else if(jsonObject.get("action").equals("verify")) {
+			Signature sig = Signature.getInstance("MD5withRSA");
+			sig.initVerify((PublicKey) publicKey);
+			FileInputStream fis = new FileInputStream("Receipts/bids-" + jsonObject.get("creatorid") + ".txt");
+			BufferedInputStream bufin = new BufferedInputStream(fis);
+			byte[] buffer = new byte[1024];
+			int len;
+			while ((len = bufin.read(buffer)) >= 0) {
+				sig.update(buffer, 0, len);
+			};
+			bufin.close();
+			FileInputStream sigfis = new FileInputStream("Receipts/rep-" + jsonObject.get("creatorid") + ".txt");
+			byte[] sigToVerify = new byte[sigfis.available()]; 
+			sigfis.read(sigToVerify);
+			sigfis.close();
+			boolean verifies = sig.verify(sigToVerify);
+			if(verifies == true) 
+				jsonObject.put("verification", "true");
+			else 
+				jsonObject.put("verification", "false");
+			int i = jsonObject.getInt("seq") + 1;
+			jsonObject.remove("seq");
+			jsonObject.put("seq", i + 1);
+			byte[] b = jsonObject.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket d = new DatagramPacket(b, b.length, ia, dp.getPort());
+			ds.send(d);
 		}
 
 		//Terminate an auction

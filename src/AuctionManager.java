@@ -149,12 +149,38 @@ public class AuctionManager {
 			ds.receive(dp2);
 			String response1 = new String(dp2.getData());
 			JSONObject jsonObject2 = new JSONObject(response1);
+
 			byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject2.getString("key")), privateKey);
 			SecretKey sessionkey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
 			byte[] name = decipherAES(decoder.decode(jsonObject2.getString("creatorid")), sessionkey);
-			Client c = new Client(sessionkey, new String(name), jsonObject2.getString("creatorid"), counter);
-			clients.add(c);
-			counter++;
+
+			JSONObject jo = new JSONObject();
+
+			//System.out.println(jsonObject2.getString("lci"))
+
+			//if(counter == 0) {
+				Client c = new Client(sessionkey, new String(name), jsonObject2.getString("creatorid"), counter);
+				clients.add(c);
+				counter++;
+				jo.put("ack", 1);
+			/*}
+			else {
+				for(int i = 0; i < clients.size(); i++) {
+					if(!clients.get(i).pk.equals(jsonObject2.getString("clientkey"))) {
+						Client c = new Client(sessionkey, new String(name), jsonObject2.getString("creatorid"), counter, jsonObject2.getString("clientkey"));
+						clients.add(c);
+						counter++;
+						jo.put("ack", 1);
+					}
+					else {
+						System.out.println("card already connected");
+						jo.put("ack", 0);
+					}
+				}
+			}*/
+			byte[] b = jo.toString().getBytes();
+			DatagramPacket d = new DatagramPacket(b, b.length, ia, dp.getPort());
+			ds.send(d);
 		}
 		
 		//Create a new auction
@@ -252,8 +278,66 @@ public class AuctionManager {
 			writer.close();*/
 		}
 
-		if(jsonObject.get("action").equals("terminate")) {
-			//falta isto
+		else if(jsonObject.get("action").equals("sign")) {
+
+			System.out.println("???");
+
+			//sign the bidFileInputStream fis = new FileInputStream(args[0]);
+
+			Signature dsa = Signature.getInstance("MD5withRSA");
+			dsa.initSign((PrivateKey) privateKey);
+			FileInputStream fis = new FileInputStream("Receipts/bids-" + jsonObject.get("creatorid") + ".txt");
+			BufferedInputStream bufin = new BufferedInputStream(fis);
+			byte[] buffer = new byte[1024];
+			int len;
+			while ((len = bufin.read(buffer)) >= 0) {
+				dsa.update(buffer, 0, len);
+			};
+			bufin.close();
+			byte[] signatureBytes = dsa.sign();
+			FileOutputStream sigfos = new FileOutputStream("Receipts/man-" + jsonObject.get("creatorid") + ".txt");
+			sigfos.write(signatureBytes);
+			sigfos.close();
+
+			System.out.println("signed.");
+
+			JSONObject jo = new JSONObject();
+			jo.put("ack", 1);
+			jo.put("seq", jsonObject.getInt("seq") + 1);
+			byte[] b = jo.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket d = new DatagramPacket(b, b.length, ia, 9000);
+			ds.send(d);
+		}
+
+		else if(jsonObject.get("action").equals("verify")) {
+			Signature sig = Signature.getInstance("MD5withRSA");
+			sig.initVerify((PublicKey) publicKey);
+			FileInputStream datafis = new FileInputStream("Receipts/bids-" + jsonObject.get("creatorid") + ".txt");
+			BufferedInputStream bufin = new BufferedInputStream(datafis);
+			byte[] buffer = new byte[1024];
+			int len;
+			while (bufin.available() != 0) {
+				len = bufin.read(buffer);
+				sig.update(buffer, 0, len);
+			};
+			bufin.close();
+			FileInputStream sigfis = new FileInputStream("Receipts/man-" + jsonObject.get("creatorid") + ".txt");
+			byte[] sigToVerify = new byte[sigfis.available()]; 
+			sigfis.read(sigToVerify);
+			sigfis.close();
+			boolean verifies = sig.verify(sigToVerify);
+			if(verifies == true) 
+				jsonObject.put("verification", "true");
+			else 
+				jsonObject.put("verification", "false");
+			int i = jsonObject.getInt("seq") + 1;
+			jsonObject.remove("seq");
+			jsonObject.put("seq", i);
+			byte[] b = jsonObject.toString().getBytes();
+			InetAddress ia = InetAddress.getLocalHost();
+			DatagramPacket d = new DatagramPacket(b, b.length, ia, dp.getPort());
+			ds.send(d);
 		}
 
 		if(jsonObject.get("action").equals("showbids")) {
@@ -300,31 +384,6 @@ public class AuctionManager {
 			InetAddress ia = InetAddress.getLocalHost();
 			DatagramPacket dp1 = new DatagramPacket(o, o.length, ia, 9000);
 			ds.send(dp1);
-		}
-
-		if(jsonObject.get("action").equals("checkoutcome")) {
-			//byte[] decipheredkey = decipherRSA(decoder.decode(jsonObject.getString("key")), privateKey);
-			//SecretKey originalKey = new SecretKeySpec(decipheredkey, 0, decipheredkey.length, "AES");
-			//byte[] decipheredclient = decipherAES(decoder.decode(jsonObject.getString("creatorid")), originalKey);
-			//byte[] cipheredclient = cipherAES(decipheredclient);
-			//jsonObject.remove("key");
-			//jsonObject.remove("creatorid");
-			//jsonObject.put("creatorid", new String(cipheredclient));
-			//InetAddress ia = InetAddress.getLocalHost();
-			//byte[] b = jsonObject.toString().getBytes();
-			//DatagramPacket dp0 = new DatagramPacket(b, b.length, ia, 8000);
-			//ds.send(dp0);
-			/*
-			byte[] b1 = new byte[1024];
-			DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
-			ds.receive(dp1);
-			String response = new String(dp1.getData());
-			JSONObject jo = new JSONObject(response);
-			jo.put("seq", jsonObject.getInt("seq") + 1);
-			byte[] b2 = jo.toString().getBytes();
-			DatagramPacket dp2 = new DatagramPacket(b2, b2.length, ia, dp.getPort());
-			ds.send(dp2);
-			*/
 		}
 
 		if(jsonObject.get("action").equals("checkcont")) {

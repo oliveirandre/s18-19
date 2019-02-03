@@ -228,4 +228,18 @@ class CC {
             e.printStackTrace();
         }
     }
+
+    PublicKey
+    getCertKey(){
+        try{
+            CertificateFactory fact = CertificateFactory.getInstance("X.509");
+            X509Certificate cer = (X509Certificate) fact.generateCertificate(
+                    new ByteArrayInputStream(getCertString().getBytes()));
+            return cer.getPublicKey();
+        }catch(Exception e){
+            System.err.print("Error geting User pubk");
+            System.exit(1);
+        }
+        return null;
+    }
 }

@@ -1,6 +1,7 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.nio.file.Files;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -40,6 +41,7 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.io.FileWriter;
+import java.nio.file.Paths;
 
 /*
  *
@@ -63,6 +65,7 @@ public class AuctionClient {
 	private static int seq = 1;
 	private static String name;
 	private static KeyPair kp;
+	private static PublicKey publicKey = null;
 	private static SecretKey mansession = null;
 	private static SecretKey repsession = null;
 	private static Key managerPublicKey = null;
@@ -130,7 +133,19 @@ public class AuctionClient {
 			System.exit(0);
 		}
 
-		System.out.println(cc.getCertString());
+		publicKey = cc.getCertKey();
+
+		String ok = cc.getCertString();
+
+		//String str = "oi";
+
+		//System.out.println(cc.getCertString());
+
+		//System.out.println(encoder.encodeToString(cc.getCertKey().getEncoded()));
+
+		//String sign = cc.sign(str);
+
+		//System.out.println(cc.verifySign(str, sign, cc.getCertKey()));
 
 		generateKeys();
 
@@ -146,8 +161,6 @@ public class AuctionClient {
 		data.put("action", "newclient");
 		//data.put("name", name);
 		data.put("seq", seq);
-		//String encodedKey = encoder.encodeToString(publicKey.getEncoded());
-		//data.put("clientkey", encodedKey);
 		byte[] b = data.toString().getBytes();
 		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 8000);
 		ds.send(dp);
@@ -167,6 +180,7 @@ public class AuctionClient {
 		//send ciphered data to manager
 		data.remove("seq");
 		data.put("seq", seq);
+		//String encodedKey = encoder.encodeToString(publicKey.getEncoded());
 		byte[] bytes = name.getBytes();
 		byte[] cipheredname = cipherAES(bytes, mansession);
 		byte[] cipheredkey = cipherRSA(mansession.getEncoded(), managerPublicKey);
@@ -175,6 +189,18 @@ public class AuctionClient {
 		byte[] databytes = data.toString().getBytes();
 		DatagramPacket d = new DatagramPacket(databytes, databytes.length, ia, 8000);
 		ds.send(d);
+
+		byte[] manr = new byte[1024];
+		DatagramPacket dman = new DatagramPacket(manr, manr.length);
+		ds.receive(dman);
+		String rman = new String(dman.getData());
+		JSONObject j1 = new JSONObject(rman);
+
+		if(j1.getInt("ack") == 0) {
+			System.out.println("\nThis card is already connected to another client. Please use another one.");
+			System.out.println("Exiting...");
+			System.exit(0);
+		}
 
 		//Data to repository
 		data.remove("seq");
@@ -222,9 +248,6 @@ public class AuctionClient {
 			return;
 		}
 
-		//Create file for this client
-		//File f = new File("Receipts/client" + response + ".txt");
-
 		while(true) {
 			int action = menu();
 			executeCommand(action);
@@ -263,14 +286,12 @@ public class AuctionClient {
 				return;
 			}
 
-			System.out.print("Minimum Bid ->");
+			System.out.print("Minimum Bid -> ");
 			int minBid = sc.nextInt();
 			data.put("minBid", String.valueOf(minBid));
-			System.out.print("Max Bids per user ->");
+			System.out.print("Max Bids per user -> ");
 			int maxBid = sc.nextInt();
 			data.put("maxBids", String.valueOf(maxBid));
-
-
 
 		}
 		else {
@@ -460,6 +481,7 @@ public class AuctionClient {
 			var++;
 			hash = calculateHash(jo.getString("action"), jo.getInt("seq"), var);
 		}
+
 		//System.out.println(hash);
 		byte[] cipheredhash = cipherAES(hash.getBytes(), repsession);
 		byte[] cipheredkey = cipherRSA(repsession.getEncoded(), repositoryPublicKey);
@@ -469,20 +491,20 @@ public class AuctionClient {
 		hashjson.put("seq", seq);
 		hashjson.put("hash", encoder.encodeToString(cipheredhash));
 		hashjson.put("key", encoder.encodeToString(cipheredkey));
-		//System.out.println(encoder.encodeToString(secKey.getEncoded()));
-		//System.out.println(hashjson.toString());
+
 		System.out.println("\nTo which auction do you wish to bid?");
 		System.out.print("> ");
 		int choice = sc.nextInt();
 		System.out.println("\nValue (must be an integer): ");
 		System.out.print("> ");
 		String val = "";
+		byte[] cipheredvalue = null;
 		if(sc.hasNextInt()) {
 			int value = sc.nextInt();
 			hashjson.put("error", 0);
 			val = String.valueOf(value);
 			byte[] bytesvalue = val.getBytes();
-			byte[] cipheredvalue = cipherAES(bytesvalue, mansession);
+			cipheredvalue = cipherAES(bytesvalue, mansession);
 			hashjson.put("value", encoder.encodeToString(cipheredvalue));
 		}
 		else {
@@ -503,68 +525,6 @@ public class AuctionClient {
 		hashjson.put("key2", encoder.encodeToString(cipheredkey2));
 		hashjson.put("timestamp", timestamp);
 		hashjson.put("auction", choice);
-		//toSign = hashjson.toString().getBytes();
-
-		toSign = "Bid of " + val + " made by " + name + " to auction number " + choice;
-		signed = cc.sign(toSign);
-		FileWriter f = new FileWriter("Receipts/" + encoder.encodeToString(cipheredcreator) + ".txt");
-        f.write( signed );
-		f.close();
-		
-		//hashjson.put("tosign", toSign);
-
-
-		/*PrintWriter pw = new PrintWriter("Receipts/bid.txt");
-		pw.println("bid");
-		pw.close();
-
-		//sign the bid
-		/*Signature dsa = Signature.getInstance("SHA1withDSA", "SUN");
-		dsa.initSign(kp.getPrivate());
-
-		FileInputStream fis = new FileInputStream("Receipts/bid.txt");
-		BufferedInputStream bufin = new BufferedInputStream(fis);
-		byte[] buffer = new byte[1024];
-		int len;
-		while ((len = bufin.read(buffer)) >= 0) {
-			dsa.update(buffer, 0, len);
-		};
-		bufin.close();
-
-		byte[] signatureBytes = dsa.sign();
-		FileOutputStream sigfos = new FileOutputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
-		sigfos.write(signatureBytes);
-		sigfos.close();*/
-
-		//hashjson.put("toSign", toSign.toString());
-
-		//hashjson.put("signature", signatureBytes.toString());
-
-		/*
-		dsa.initVerify(kp.getPublic());
-		dsa.update(sign);
-		*/
-
-		/*FileInputStream fis = new FileInputStream(args[0]);
-		BufferedInputStream bufin = new BufferedInputStream(fis);
-		byte[] buffer = new byte[1024];
-		int len;
-		while ((len = bufin.read(buffer)) >= 0) {
-			dsa.update(buffer, 0, len);
-		};
-		bufin.close();
-		byte[] realSig = dsa.sign();*/
-
-		/* save the signature in a file */
-		/*FileOutputStream sigfos = new FileOutputStream("sig");
-		sigfos.write(realSig);
-		sigfos.close();
-
-		/* save the public key in a file */
-		/*byte[] key = publicKey.getEncoded();
-		FileOutputStream keyfos = new FileOutputStream("manepk");
-		keyfos.write(key);
-		keyfos.close();*/
 
 		//send cryptopuzzle and bid to repository
 		byte[] send = hashjson.toString().getBytes();
@@ -582,8 +542,33 @@ public class AuctionClient {
 			System.out.println("\nInvalid auction.");
 		}
 		else if(checkseq(jo2.getInt("seq")) && jo2.getInt("ack") == 1) {
-			System.out.println("\nBid sent succesfully");
+			toSign += "Bid of " + encoder.encodeToString(cipheredvalue) + " made by " + encoder.encodeToString(cipheredcreator) + " to auction number " + choice + "\n";
+			signed = cc.sign(toSign);
+			FileWriter f = new FileWriter("Receipts/" + encoder.encodeToString(cipheredcreator) + ".txt");
+			f.write( signed );
+			f.close();
+			FileWriter f2 = new FileWriter("Receipts/bids-" + encoder.encodeToString(cipheredcreator) + ".txt");
+			f2.write( toSign );
+			f2.close();
 			bidnumber++;
+
+			JSONObject j = new JSONObject();
+			j.put("action", "sign");
+			j.put("text", toSign);
+			j.put("seq", seq);
+			j.put("creatorid", encoder.encodeToString(cipheredcreator));
+			byte[] tosend = j.toString().getBytes();
+			DatagramPacket d = new DatagramPacket(tosend, tosend.length, ia1, 9000);
+			ds.send(d);
+
+			byte[] rman = new byte[1024];
+			DatagramPacket resprman = new DatagramPacket(rman, rman.length);
+			ds.receive(resprman);
+			String r2 = new String(resprman.getData());
+			JSONObject jobj = new JSONObject(r2);
+			if(checkseq(jobj.getInt("seq")) && jobj.getInt("ack") == 1) {
+				System.out.println("\nBid sent succesfully and signed.");
+			}
 		}
 		else if(jo2.getInt("ack") == 2) {
 			System.out.println("\nBid is inferior to the previous one!");
@@ -591,9 +576,6 @@ public class AuctionClient {
 		else if(jo2.getInt("ack") == 3) {
 			System.out.println("\nMax Bids amount already reached!");
 		}
-
-
-
 	}
 	
 	//Display all bids of an auction
@@ -736,60 +718,53 @@ public class AuctionClient {
 	}
 
 	private static void receipt() throws NoSuchProviderException, NoSuchAlgorithmException, InvalidKeyException, FileNotFoundException, IOException, SignatureException {
-	// ----- VERIFY
 
-		/*
-		FileInputStream sigfis = new FileInputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
-		byte[] sigToVerify = new byte[sigfis.available()]; 
-		sigfis.read(sigToVerify);
-		sigfis.close();
-
-		System.out.println("read signature successfully");
-
-		Signature sig = Signature.getInstance("SHA1withDSA", "SUN");
-		sig.initVerify(kp.getPublic());
-		FileInputStream datafis = new FileInputStream("Receipts/bid.txt");
-		BufferedInputStream bufin2 = new BufferedInputStream(datafis);
-
-		System.out.println("read data successfully");
-
-		byte[] buffer2 = new byte[1024];
-		int len2;
-		while (bufin2.available() != 0) {
-			len2 = bufin2.read(buffer2);
-			sig.update(buffer2, 0, len2);
-		};
-		bufin2.close();
-
-		boolean verifies = sig.verify(sigToVerify);
-		System.out.println("signature verifies: " + verifies);*/
 		byte[] bytes = name.getBytes();
 		byte[] cipheredcreator = cipherAES(bytes, mansession);
+		DatagramSocket ds = new DatagramSocket();
+		JSONObject j = new JSONObject();
+		j.put("creatorid", encoder.encodeToString(cipheredcreator));
+		j.put("action", "verify");
+		j.put("seq", seq);
+		byte[] b = j.toString().getBytes();
+		InetAddress ia = InetAddress.getLocalHost();
+		DatagramPacket dp = new DatagramPacket(b, b.length, ia, 8000);
+		ds.send(dp);
 
-		Signature sig = Signature.getInstance("SHA1withDSA", "SUN");
-		sig.initVerify((PublicKey) managerPublicKey);
-		sig.update(toSign.getBytes());
-		
+		byte[] b1 = new byte[1024];
+		DatagramPacket dp1 = new DatagramPacket(b1, b1.length);
+		ds.receive(dp1);
+		String line = new String(dp1.getData());
+		JSONObject jo = new JSONObject(line);
+		if(checkseq(jo.getInt("seq"))) {
+			if(jo.get("verification").equals("true"))
+				System.out.println("\nThe manager's digital signature for this client is valid!");
+			else 
+				System.out.println("\nThe manager's digital signature is invalid!");
+		}
 
-		FileInputStream sigfis = new FileInputStream("Receipts/man" + encoder.encodeToString(cipheredcreator) + ".txt");
-		byte[] sigToVerify = new byte[sigfis.available()]; 
-		sigfis.read(sigToVerify);
-		sigfis.close();
+		DatagramPacket dp2 = new DatagramPacket(b, b.length, ia, 9000);
+		ds.send(dp2);
 
-		/*FileInputStream datafis = new FileInputStream("Receipts/" + encoder.encodeToString(cipheredcreator) + bidnumber + ".txt");
-		BufferedInputStream bufin = new BufferedInputStream(datafis);
+		byte[] b2 = new byte[1024];
+		DatagramPacket dp3 = new DatagramPacket(b2, b2.length);
+		ds.receive(dp3);
+		String line2 = new String(dp3.getData());
+		JSONObject jo2 = new JSONObject(line2);
+		if(checkseq(jo2.getInt("seq"))) {
+			if(jo2.get("verification").equals("true"))
+				System.out.println("\nThe repository's digital signature for this client is valid!");
+			else 
+				System.out.println("\nThe repository's digital signature is invalid!");
+		}
 
-		byte[] buffer = new byte[1024];
-		int len;
-		while (bufin.available() != 0) {
-			len = bufin.read(buffer);
-			sig.update(buffer, 0, len);
-		};
+		byte[] lines = Files.readAllBytes(Paths.get("Receipts/bids-" + encoder.encodeToString(cipheredcreator) + ".txt"));
+		String str = new String(lines);
+		String sign = cc.sign(str);
+		if(cc.verifySign(str, sign, cc.getCertKey()) == true) {
+			System.out.println("\nAll bids are validated by the client.");
+		}
 
-		bufin.close();*/
-
-		boolean verifies = sig.verify(sigToVerify);
-		System.out.println("signature verifies: " + verifies);
 	}
 
 	public static int menu() {
